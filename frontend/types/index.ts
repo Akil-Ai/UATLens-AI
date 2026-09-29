@@ -117,3 +117,50 @@ export interface ProjectDetail {
   test_case_count?: number;
   flag_count?: number;
 }
+
+// ── Clarification Decisions ──────────────────────────────────────────────────
+
+export type ClarificationDecisionStatus = "pending" | "accepted" | "rejected" | "answered";
+
+export interface ClarificationDecision {
+  id: string;
+  project_id: string;
+  requirement_id?: string;
+  issue_type: string;
+  description: string;
+  suggested_question: string;
+  decision: ClarificationDecisionStatus;
+  reviewer_answer?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ── Permission Rules ─────────────────────────────────────────────────────────
+
+export interface PermissionRule {
+  id: string;
+  project_id: string;
+  role: string;
+  action: string;
+  condition?: string;
+  decision: "allow" | "deny";
+  source_requirement_id?: string;
+  source_rule_id?: string;
+}
+
+export interface PermissionCoverageMetric {
+  role: string;
+  total_permissions: number;
+  allow_count: number;
+  deny_count: number;
+  tested_allow: number;
+  tested_deny: number;
+  coverage_pct: number;
+}
+
+export interface PermissionCoverageResponse {
+  metrics: PermissionCoverageMetric[];
+  uncovered_allow: { role: string; action: string }[];
+  uncovered_deny: { role: string; action: string }[];
+}
+

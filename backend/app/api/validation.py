@@ -40,7 +40,8 @@ def validate_suite(project_id: str = Query(...), db: Session = Depends(get_db)):
     report = validate_test_suite(tc_dicts, req_dicts, project.raw_text)
 
     # Sync flags table
-    db.query(Flag).filter(Flag.project_id == project_id).delete()
+    db.query(Flag).filter(Flag.project_id == project_id).delete(synchronize_session=False)
+
     for item in report.get("clarification_items", []):
         db.add(Flag(
             test_case_id=item.get("test_case_id"),

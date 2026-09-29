@@ -23,13 +23,15 @@ import {
   Filter,
   AlertTriangle,
 } from "lucide-react";
-import { TestCase } from "@/types";
+import { TestCase, PermissionCoverageResponse, PermissionCoverageMetric } from "@/types";
+import { fetchPermissionCoverage } from "@/lib/api";
 
 interface Stage4DashboardProps {
   testCases: TestCase[];
   onFilterGrid: (filterType: string, value: string) => void;
   onProceedToExport: () => void;
   onBackToGrid: () => void;
+  projectId?: string;
 }
 
 export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
@@ -37,7 +39,25 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
   onFilterGrid,
   onProceedToExport,
   onBackToGrid,
+  projectId,
 }) => {
+  const [permCoverage, setPermCoverage] = React.useState<PermissionCoverageResponse | null>(null);
+  const [permLoading, setPermLoading] = React.useState(false);
+
+  const loadPermCoverage = React.useCallback(async () => {
+    if (!projectId) return;
+    setPermLoading(true);
+    try {
+      const data = await fetchPermissionCoverage(projectId);
+      setPermCoverage(data);
+    } catch { /* silent */ } finally {
+      setPermLoading(false);
+    }
+  }, [projectId]);
+
+  React.useEffect(() => {
+    loadPermCoverage();
+  }, [loadPermCoverage]);
   // Metrics calculation
   const total = testCases.length;
   const approved = testCases.filter((tc) => tc.status === "Approved").length;
@@ -300,6 +320,81 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Permission Coverage Section */}
+        {permCoverage && permCoverage.metrics.length > 0 && (
+          <div className="mt-6 p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Role Permission Test Coverage
+              </h4>
+              <button
+                onClick={loadPermCoverage}
+                disabled={permLoading}
+                className="text-[11px] text-indigo-600 font-semibold hover:underline"
+              >
+                {permLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {permCoverage.metrics.map((metric) => (
+                <div key={metric.role} className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-6 h-6 rounded-md bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-[10px]">
+                        {metric.role.charAt(0)}
+                      </div>
+                      <span className="text-xs font-bold text-slate-800">{metric.role}</span>
+                    </div>
+                    <span className={`text-xs font-extrabold ${
+                      metric.coverage_pct >= 80 ? "text-emerald-600" :
+                      metric.coverage_pct >= 50 ? "text-amber-600" : "text-rose-600"
+                    }`}>
+                      {metric.coverage_pct}%
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        metric.coverage_pct >= 80 ? "bg-emerald-500" :
+                        metric.coverage_pct >= 50 ? "bg-amber-500" : "bg-rose-500"
+                      }`}
+                      style={{ width: `${metric.coverage_pct}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-3 text-[10px] text-slate-500">
+                    <span>{metric.allow_count} allow rules · {metric.tested_allow} tested</span>
+                    <span>·</span>
+                    <span>{metric.deny_count} deny rules · {metric.tested_deny} tested</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Uncovered permissions */}
+            {(permCoverage.uncovered_allow.length > 0 || permCoverage.uncovered_deny.length > 0) && (
+              <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                  Uncovered Permissions — consider adding test cases:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {permCoverage.uncovered_allow.slice(0, 6).map((u, i) => (
+                    <span key={`a-${i}`} className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] text-emerald-800 font-medium">
+                      + {u.role}: {u.action.slice(0, 40)}
+                    </span>
+                  ))}
+                  {permCoverage.uncovered_deny.slice(0, 6).map((u, i) => (
+                    <span key={`d-${i}`} className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-[10px] text-rose-800 font-medium">
+                      – {u.role}: {u.action.slice(0, 40)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Requirement Coverage Heatmap Matrix */}
         <div className="mt-6 p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-3">

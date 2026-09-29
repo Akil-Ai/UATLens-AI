@@ -168,9 +168,32 @@ class LLMClient:
         batch_text = "\n\n".join([f"[{r.get('id')}] {r.get('title')}: {r.get('text')}" for r in requirements_batch])
         context_summary = f"Roles: {', '.join([r.get('name', '') for r in context_data.get('roles', [])])}"
 
+        # Build clarification section
+        clarifications = context_data.get("clarifications", [])
+        if clarifications:
+            clar_lines = []
+            for c in clarifications:
+                clar_lines.append(f"  Q: {c.get('question', '')}")
+                if c.get('answer'):
+                    clar_lines.append(f"  A: {c.get('answer', '')}")
+            clarification_section = "Answered Clarification Questions (use these answers in test data):\n" + "\n".join(clar_lines)
+        else:
+            clarification_section = "No clarification answers provided."
+
+        # Build permission section
+        perm_rules = context_data.get("permission_rules", [])
+        if perm_rules:
+            allow_lines = [f"  ALLOW: {p['role']} can [{p['action']}]" + (f" when {p['condition']}" if p.get('condition') else "") for p in perm_rules if p.get('decision') == 'allow']
+            deny_lines = [f"  DENY:  {p['role']} cannot [{p['action']}]" + (f" — {p['condition']}" if p.get('condition') else "") for p in perm_rules if p.get('decision') == 'deny']
+            permission_section = "Permission Rules (generate matching Positive/Negative tests):\n" + "\n".join(allow_lines + deny_lines)
+        else:
+            permission_section = ""
+
         prompt = TEST_CASE_GENERATION_USER_PROMPT_TEMPLATE.format(
             requirements_batch_text=batch_text,
-            context_summary=context_summary
+            context_summary=context_summary,
+            clarification_section=clarification_section,
+            permission_section=permission_section,
         )
 
         test_cases_schema = {
@@ -234,7 +257,30 @@ class LLMClient:
         client = genai.Client(api_key=self.gemini_key)
 
         batch_text = "\n\n".join([f"[{r.get('id')}] {r.get('title')}: {r.get('text')}" for r in requirements_batch])
-        prompt = f"{TEST_CASE_GENERATION_SYSTEM_PROMPT}\n\nBatch:\n{batch_text}"
+        context_summary = f"Roles: {', '.join([r.get('name', '') for r in context_data.get('roles', [])])}"
+
+        # Build clarification section
+        clarifications = context_data.get("clarifications", [])
+        if clarifications:
+            clar_lines = [f"  Q: {c.get('question', '')}\n  A: {c.get('answer', '')}" for c in clarifications if c.get('answer')]
+            clarification_section = "Answered Clarifications:\n" + "\n".join(clar_lines) if clar_lines else "No clarification answers."
+        else:
+            clarification_section = "No clarification answers provided."
+
+        perm_rules = context_data.get("permission_rules", [])
+        if perm_rules:
+            perm_lines = [f"  {p['decision'].upper()}: {p['role']} - {p['action']}" for p in perm_rules]
+            permission_section = "Permission Rules:\n" + "\n".join(perm_lines)
+        else:
+            permission_section = ""
+
+        prompt_body = TEST_CASE_GENERATION_USER_PROMPT_TEMPLATE.format(
+            requirements_batch_text=batch_text,
+            context_summary=context_summary,
+            clarification_section=clarification_section,
+            permission_section=permission_section,
+        )
+        prompt = f"{TEST_CASE_GENERATION_SYSTEM_PROMPT}\n\n{prompt_body}"
 
         response = client.models.generate_content(
             model=self.model if "gemini" in self.model else "gemini-2.0-flash",

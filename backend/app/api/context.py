@@ -40,7 +40,7 @@ async def extract_context(payload: ExtractContextRequest, db: Session = Depends(
     existing_ctx.ambiguities = [amb.model_dump() for amb in context_data.ambiguities]
 
     # Sync Requirements table
-    db.query(Requirement).filter(Requirement.project_id == project.id).delete()
+    db.query(Requirement).filter(Requirement.project_id == project.id).delete(synchronize_session=False)
     for req in context_data.requirements:
         r_model = Requirement(
             id=req.id,
@@ -107,7 +107,8 @@ def update_context(project_id: str, payload: UpdateContextRequest, db: Session =
     ctx.ambiguities = [amb.model_dump() for amb in data.ambiguities]
 
     # Update requirements
-    db.query(Requirement).filter(Requirement.project_id == project_id).delete()
+    db.query(Requirement).filter(Requirement.project_id == project_id).delete(synchronize_session=False)
+
     for req in data.requirements:
         r_model = Requirement(
             id=req.id,

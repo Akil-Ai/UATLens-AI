@@ -304,12 +304,13 @@ export default function Home() {
 
           {/* ─── STAGE 2: Context Review ─── */}
           {currentStep === 2 && (
-            <Stage2Context
+                      <Stage2Context
               contextData={contextData}
               onContextDataChange={setContextData}
               onProceedToGenerate={handleGenerateTestCases}
               onBackToInput={() => goToStep(1)}
               isGenerating={isGenerating}
+              projectId={currentProject?.id}
             />
           )}
 
@@ -332,9 +333,10 @@ export default function Home() {
 
           {/* ─── STAGE 4: Analytics Dashboard ─── */}
           {currentStep === 4 && (
-            <Stage4Dashboard
+                      <Stage4Dashboard
               testCases={testCases}
               onFilterGrid={handleFilterGrid}
+              projectId={currentProject?.id}
               onProceedToExport={() => {
                 setCurrentStep(5);
                 setMaxReachedStep((prev) => Math.max(prev, 5) as StepNumber);

@@ -160,3 +160,56 @@ export async function validateSuite(projectId: string) {
   if (!res.ok) throw new Error("Failed to validate test suite.");
   return res.json();
 }
+
+// ── Clarification Decisions API ───────────────────────────────────────────────
+
+export async function fetchClarificationDecisions(projectId: string) {
+  const res = await fetch(`${API_BASE}/clarifications/${projectId}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function syncClarificationDecisions(projectId: string) {
+  const res = await fetch(`${API_BASE}/clarifications/${projectId}/sync`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to sync clarification decisions.");
+  return res.json();
+}
+
+export async function updateClarificationDecision(
+  projectId: string,
+  decisionId: string,
+  decision: string,
+  reviewerAnswer?: string
+) {
+  const res = await fetch(`${API_BASE}/clarifications/${projectId}/${decisionId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, reviewer_answer: reviewerAnswer || null }),
+  });
+  if (!res.ok) throw new Error("Failed to update clarification decision.");
+  return res.json();
+}
+
+// ── Permission Rules API ──────────────────────────────────────────────────────
+
+export async function extractPermissionRules(projectId: string) {
+  const res = await fetch(`${API_BASE}/permissions/${projectId}/extract`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to extract permission rules.");
+  return res.json();
+}
+
+export async function fetchPermissionRules(projectId: string) {
+  const res = await fetch(`${API_BASE}/permissions/${projectId}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchPermissionCoverage(projectId: string) {
+  const res = await fetch(`${API_BASE}/permissions/${projectId}/coverage`);
+  if (!res.ok) return null;
+  return res.json();
+}

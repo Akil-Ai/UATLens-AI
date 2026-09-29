@@ -6,6 +6,7 @@ from backend.app.config import settings
 from backend.app.db.base import Base
 from backend.app.db.session import engine
 from backend.app.models.entities import Project  # Ensures all models are imported
+from backend.app.models.entities import ClarificationDecision, PermissionRule  # noqa: F401
 from backend.app.api.health import router as health_router
 from backend.app.api.sample import router as sample_router
 from backend.app.api.projects import router as projects_router
@@ -14,6 +15,8 @@ from backend.app.api.context import router as context_router
 from backend.app.api.test_cases import router as test_cases_router
 from backend.app.api.validation import router as validation_router
 from backend.app.api.export import router as export_router
+from backend.app.api.clarifications import router as clarifications_router
+from backend.app.api.permissions import router as permissions_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,8 +24,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("uatlens")
 
-# Initialize database schema
-Base.metadata.create_all(bind=engine)
+# Database schema is managed via explicit Alembic migrations
+# Run: alembic upgrade head (or python -m backend.app.db.migrate_data)
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -62,6 +66,8 @@ app.include_router(context_router, prefix="/api")
 app.include_router(test_cases_router, prefix="/api")
 app.include_router(validation_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
+app.include_router(clarifications_router, prefix="/api")
+app.include_router(permissions_router, prefix="/api")
 
 
 @app.get("/")

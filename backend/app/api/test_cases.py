@@ -12,6 +12,8 @@ from backend.app.models.entities import (
     TestCase,
     TestCaseVersion,
     Flag,
+    ClarificationDecision,
+    PermissionRule,
 )
 from backend.app.schemas.test_case import (
     TestCaseResponse,
@@ -49,6 +51,36 @@ async def generate_test_cases_stream(project_id: str = Query(...)):
             "roles": ctx.roles if ctx else [],
             "business_rules": ctx.business_rules if ctx else []
         }
+
+        # Load clarification decisions (answered ambiguities become context for generation)
+        decisions = db.query(ClarificationDecision).filter(
+            ClarificationDecision.project_id == project_id,
+            ClarificationDecision.decision.in_(["answered", "accepted"])
+        ).all()
+        clarification_context = [
+            {
+                "requirement_id": d.requirement_id,
+                "question": d.suggested_question,
+                "answer": d.reviewer_answer or "",
+                "decision": d.decision
+            }
+            for d in decisions
+        ]
+        ctx_dict["clarifications"] = clarification_context
+
+        # Load permission rules for permission-aware generation
+        perm_rules = db.query(PermissionRule).filter(
+            PermissionRule.project_id == project_id
+        ).all()
+        ctx_dict["permission_rules"] = [
+            {
+                "role": p.role,
+                "action": p.action,
+                "condition": p.condition,
+                "decision": p.decision
+            }
+            for p in perm_rules
+        ]
     finally:
         db.close()
 
@@ -84,11 +116,14 @@ async def generate_test_cases_stream(project_id: str = Query(...)):
 
         db_write: Session = SessionLocal()
         try:
-            # Clear old test cases for this project
-            db_write.query(TestCase).filter(TestCase.project_id == project_id).delete()
+            # Clear old child flags, versions, and test cases for this project in dependency order
+            db_write.query(Flag).filter(Flag.project_id == project_id).delete(synchronize_session=False)
+            db_write.query(TestCaseVersion).filter(TestCaseVersion.project_id == project_id).delete(synchronize_session=False)
+            db_write.query(TestCase).filter(TestCase.project_id == project_id).delete(synchronize_session=False)
             db_write.commit()
 
             raw_doc = project.raw_text
+
 
             for item in generated_cases:
                 scen_norm = item.get("scenario", "").strip().lower()
@@ -157,8 +192,12 @@ async def generate_test_cases_stream(project_id: str = Query(...)):
                 await asyncio.sleep(0.04)
 
             db_write.commit()
+        except Exception:
+            db_write.rollback()
+            raise
         finally:
             db_write.close()
+
 
         yield f"data: {json.dumps({'event': 'complete', 'total_generated': len(final_cases), 'message': f'Successfully generated and validated {len(final_cases)} test cases.'})}\n\n"
 
