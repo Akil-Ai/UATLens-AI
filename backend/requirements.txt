@@ -9,3 +9,5 @@ python-docx>=1.1.2
 pypdf>=5.1.0
 httpx>=0.28.0
 pytest>=8.3.0
+
+# Commit ref: 2
