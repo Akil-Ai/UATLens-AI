@@ -15,3 +15,5 @@ def health_check():
         "has_anthropic_key": bool(settings.ANTHROPIC_API_KEY),
         "has_gemini_key": bool(settings.GEMINI_API_KEY),
     }
+
+# Commit ref: 45
