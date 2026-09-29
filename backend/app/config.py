@@ -23,3 +23,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Commit ref: 11
