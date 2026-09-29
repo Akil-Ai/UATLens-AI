@@ -103,3 +103,5 @@ export const Stepper: React.FC<StepperProps> = ({
     </div>
   );
 };
+
+# Commit ref: 60
