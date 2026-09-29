@@ -86,3 +86,5 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
     db.delete(project)
     db.commit()
     return {"message": "Project and all associated artifacts deleted successfully.", "id": project_id}
+
+# Commit ref: 46
