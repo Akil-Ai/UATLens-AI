@@ -12,6 +12,8 @@ import {
   Sparkles,
   ArrowLeft,
   ExternalLink,
+  AlertCircle,
+  X,
 } from "lucide-react";
 import { TestCase } from "@/types";
 
@@ -22,6 +24,8 @@ interface Stage5ExportProps {
   onBackToDashboard: () => void;
 }
 
+type ExportStatus = { type: "success" | "error"; message: string } | null;
+
 export const Stage5Export: React.FC<Stage5ExportProps> = ({
   projectId,
   projectName,
@@ -30,25 +34,84 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
 }) => {
   const [exportScope, setExportScope] = useState<"all" | "approved">("all");
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<ExportStatus>(null);
 
   const approvedCount = testCases.filter((tc) => tc.status === "Approved").length;
 
+  const MIME_TYPES: Record<string, string> = {
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    csv: "text/csv",
+    jira: "text/csv",
+    json: "application/json",
+  };
+
+  const FILE_EXT: Record<string, string> = {
+    xlsx: "xlsx",
+    csv: "csv",
+    jira: "csv",
+    json: "json",
+  };
+
   const handleDownload = async (format: "xlsx" | "csv" | "jira" | "json") => {
+    if (!projectId) {
+      setExportStatus({ type: "error", message: "No project selected. Please select a project before exporting." });
+      return;
+    }
+
     setDownloadingFormat(format);
+    setExportStatus(null);
+
     try {
       const statusParam = exportScope === "approved" ? "&status=Approved" : "";
       const downloadUrl = `/api/export/${projectId}?format=${format}${statusParam}`;
-      
+
+      const response = await fetch(downloadUrl, { method: "GET" });
+
+      if (!response.ok) {
+        let detail = `Server returned ${response.status}`;
+        try {
+          const errJson = await response.json();
+          detail = errJson?.detail || detail;
+        } catch {}
+        throw new Error(detail);
+      }
+
+      // Read binary content as blob
+      const blob = await response.blob();
+
+      // Extract filename from Content-Disposition header
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename[^;=\n]*=\s*["']?([^"';\n]+)["']?/i);
+      const filename = match
+        ? match[1].trim()
+        : `${projectName || "UATlens"}_Export.${FILE_EXT[format]}`;
+
+      // Create a temporary object URL and trigger download
+      const blobUrl = URL.createObjectURL(
+        new Blob([blob], { type: MIME_TYPES[format] })
+      );
       const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.setAttribute("download", "");
+      link.href = blobUrl;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } catch (err) {
+
+      // Release memory
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+
+      setExportStatus({
+        type: "success",
+        message: `✓ "${filename}" downloaded successfully.`,
+      });
+    } catch (err: any) {
       console.error("Export download failed", err);
+      setExportStatus({
+        type: "error",
+        message: err?.message || "Export failed. Please ensure test cases are generated and try again.",
+      });
     } finally {
-      setTimeout(() => setDownloadingFormat(null), 1000);
+      setTimeout(() => setDownloadingFormat(null), 800);
     }
   };
 
@@ -79,6 +142,32 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
             <span>Back to Dashboard</span>
           </button>
         </div>
+
+        {/* Export Status Banner */}
+        {exportStatus && (
+          <div
+            className={`mt-5 flex items-start justify-between gap-3 px-4 py-3 rounded-2xl text-xs font-medium border animate-in fade-in slide-in-from-top-1 duration-300 ${
+              exportStatus.type === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : "bg-rose-50 border-rose-200 text-rose-800"
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              {exportStatus.type === "success" ? (
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              )}
+              <span>{exportStatus.message}</span>
+            </div>
+            <button
+              onClick={() => setExportStatus(null)}
+              className="p-0.5 rounded-full hover:bg-black/10 transition-colors shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Scope Selector: All vs Approved */}
         <div className="mt-6 p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
