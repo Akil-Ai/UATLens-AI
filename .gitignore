@@ -26,3 +26,4 @@ dist/
 build/
 test_output.xlsx
 *.xlsx
+*.tsbuildinfo

@@ -96,31 +96,62 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
-      {/* Top Header Card */}
-      <div className="glass-card p-6 sm:p-8 rounded-3xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/60 pb-6">
-          <div>
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200/60 text-indigo-700 text-xs font-semibold mb-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Stage 1 of 5</span>
+      {/* Top Hero Liquid Glass Card with Logo */}
+      <div className="liquid-glass p-6 sm:p-10 rounded-[32px] text-center sm:text-left relative overflow-hidden">
+        {/* Subtle decorative logo azure/purple aurora glow */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-br from-blue-400/20 via-purple-400/15 to-transparent rounded-full filter blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pb-6 border-b border-white/60">
+          <div className="flex flex-col items-center sm:items-start space-y-3">
+            {/* Logo Badge & Stage Indicator */}
+            <div className="flex items-center space-x-3">
+              <img
+                src="/logo.png"
+                alt="UATlens AI"
+                className="h-9 sm:h-11 w-auto object-contain drop-shadow-xs"
+              />
+              <span className="liquid-glass-pill px-3 py-1 text-[11px] font-semibold text-blue-900 border border-blue-200/60 shadow-2xs">
+                Stage 1 of 5 • Requirements Analysis
+              </span>
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-              Provide Business Requirements
-            </h2>
-            <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-              Paste user stories, acceptance criteria, or upload product specs (PDF, DOCX, TXT, MD). UATlens will extract roles, boundaries, and validation rules.
+
+            {/* Editorial Heading Matching Logo */}
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 leading-tight">
+              AI-Powered <span className="logo-gradient-text">Test Case Generator</span>
+            </h1>
+
+            <p className="text-sm text-slate-600 max-w-2xl font-normal leading-relaxed">
+              Upload product specs, acceptance criteria, or paste user stories. UATlens AI extracts deterministic business rules, roles, and boundaries with zero hallucinations.
             </p>
+
+            {/* Logo-Colored Pill Tags Row */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+              <span className="liquid-glass-pill px-3.5 py-1 text-[11px] font-semibold text-blue-800 border-blue-200/80 cursor-default">
+                Zero Hallucination
+              </span>
+              <span className="liquid-glass-pill px-3.5 py-1 text-[11px] font-semibold text-indigo-800 border-indigo-200/80 cursor-default">
+                Deterministic Validation
+              </span>
+              <span className="liquid-glass-pill px-3.5 py-1 text-[11px] font-semibold text-purple-800 border-purple-200/80 cursor-default">
+                100% Traceability
+              </span>
+              <span className="liquid-glass-pill px-3.5 py-1 text-[11px] font-semibold text-slate-700 cursor-default">
+                Multi-Role Scenarios
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          {/* Quick Action Pill Button with Logo Gradient */}
+          <div className="flex flex-col items-center sm:items-end space-y-2">
             <button
               onClick={handleLoadSample}
               disabled={isUploading}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-white/90 hover:bg-white text-indigo-700 border border-indigo-200 shadow-sm hover:shadow transition-all"
+              className="liquid-glass-pill flex items-center space-x-2 px-4 py-2.5 text-xs font-semibold text-blue-900 hover:bg-white hover:text-blue-700 cursor-pointer shadow-xs border border-blue-200/70"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isUploading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isUploading ? "animate-spin" : ""}`} />
               <span>Load Sample (E-Commerce)</span>
             </button>
+            <span className="text-[10px] text-slate-400">Pre-configured PRD with 6 modules</span>
           </div>
         </div>
 
@@ -133,8 +164,8 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
             type="text"
             value={projectName}
             onChange={(e) => onProjectNameChange(e.target.value)}
-            placeholder="e.g., E-Commerce Checkout & Payment Gateway"
-            className="w-full px-4 py-3 text-sm font-medium glass-input text-slate-800 placeholder-slate-400"
+            placeholder="e.g., GlobalRetail Checkout & Payment Gateway"
+            className="w-full px-4 py-3 text-sm font-medium liquid-glass-input text-slate-800 placeholder-slate-400"
           />
         </div>
 
@@ -281,7 +312,7 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
         </div>
 
         {/* Bottom Action Footer */}
-        <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-200/60">
+        <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-white/60">
           <p className="text-xs text-slate-500">
             {charCount > 0 ? "Ready to analyze requirements." : "Enter or upload requirements to proceed."}
           </p>
@@ -289,9 +320,9 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
           <button
             onClick={onAnalyze}
             disabled={!rawText.trim() || isAnalyzing}
-            className={`w-full sm:w-auto px-7 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-white shadow-lg transition-all flex items-center justify-center space-x-2 ${
+            className={`w-full sm:w-auto px-8 py-3.5 rounded-full text-xs font-bold uppercase tracking-wider text-white transition-all flex items-center justify-center space-x-2.5 ${
               rawText.trim() && !isAnalyzing
-                ? "bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-indigo-500/25 hover:scale-[1.02] cursor-pointer"
+                ? "logo-gradient-btn hover:scale-[1.02] cursor-pointer"
                 : "bg-slate-300 shadow-none cursor-not-allowed"
             }`}
           >
@@ -302,7 +333,7 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4 text-indigo-200" />
+                <Sparkles className="w-4 h-4 text-blue-200" />
                 <span>Analyze & Extract Context</span>
               </>
             )}

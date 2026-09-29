@@ -26,7 +26,7 @@ export const Stepper: React.FC<StepperProps> = ({
 }) => {
   return (
     <div className="w-full max-w-5xl mx-auto px-4 py-4 sm:py-6">
-      <div className="glass-card p-3 sm:p-4 rounded-2xl flex items-center justify-between relative overflow-hidden">
+      <div className="liquid-glass p-2.5 sm:p-3.5 rounded-3xl flex items-center justify-between relative overflow-hidden">
         {STEPS.map((item, idx) => {
           const isCurrent = currentStep === item.step;
           const isCompleted = item.step < currentStep || item.step <= maxReachedStep;
@@ -39,22 +39,22 @@ export const Stepper: React.FC<StepperProps> = ({
               <button
                 disabled={!isClickable}
                 onClick={() => isClickable && onStepClick(item.step)}
-                className={`flex items-center space-x-3 text-left p-2 rounded-xl transition-all ${
+                className={`flex items-center space-x-3 text-left px-3 py-2 rounded-2xl transition-all ${
                   isCurrent
-                    ? "bg-indigo-50/90 border border-indigo-200/80 shadow-sm"
+                    ? "bg-white/90 border border-white shadow-md shadow-blue-500/10 scale-[1.02]"
                     : isClickable
-                    ? "hover:bg-white/80 cursor-pointer"
-                    : "opacity-45 cursor-not-allowed"
+                    ? "hover:bg-white/60 cursor-pointer"
+                    : "opacity-40 cursor-not-allowed"
                 }`}
               >
-                {/* Step badge/icon */}
+                {/* Step badge/icon with Logo Azure -> Violet Gradient */}
                 <div
                   className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm transition-all ${
                     isCurrent
-                      ? "bg-gradient-to-tr from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/25 scale-105"
+                      ? "bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white shadow-md shadow-blue-500/30 scale-105"
                       : isCompleted && item.step < currentStep
-                      ? "bg-emerald-500 text-white"
-                      : "bg-slate-200 text-slate-600"
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "bg-slate-200/80 text-slate-500"
                   }`}
                 >
                   {isCompleted && item.step < currentStep ? (
@@ -67,30 +67,30 @@ export const Stepper: React.FC<StepperProps> = ({
                 {/* Text titles */}
                 <div className="hidden md:block">
                   <div className="flex items-center space-x-1.5">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400">
                       Step {item.step}
                     </span>
                   </div>
                   <h4
                     className={`text-xs sm:text-sm font-semibold leading-tight ${
-                      isCurrent ? "text-indigo-950 font-bold" : "text-slate-700"
+                      isCurrent ? "text-slate-900 font-bold" : "text-slate-700"
                     }`}
                   >
                     {item.title}
                   </h4>
-                  <p className="text-[10px] text-slate-500">{item.subtitle}</p>
+                  <p className="text-[10px] text-slate-400">{item.subtitle}</p>
                 </div>
               </button>
 
-              {/* Connecting line */}
+              {/* Connecting line with Logo Gradient */}
               {idx < STEPS.length - 1 && (
-                <div className="flex-1 mx-2 sm:mx-3 h-0.5 bg-slate-200/80 relative overflow-hidden hidden sm:block">
+                <div className="flex-1 mx-2 sm:mx-3 h-0.5 bg-slate-200/60 rounded-full relative overflow-hidden hidden sm:block">
                   <div
                     className={`h-full transition-all duration-500 ${
                       item.step < currentStep
-                        ? "bg-emerald-500 w-full"
+                        ? "bg-gradient-to-r from-blue-600 to-indigo-600 w-full"
                         : item.step === currentStep
-                        ? "bg-indigo-500 w-1/2"
+                        ? "bg-gradient-to-r from-blue-600 to-violet-500 w-1/2"
                         : "w-0"
                     }`}
                   />
