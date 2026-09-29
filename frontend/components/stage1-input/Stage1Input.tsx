@@ -312,5 +312,3 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
     </div>
   );
 };
-
-# Commit ref: 61
