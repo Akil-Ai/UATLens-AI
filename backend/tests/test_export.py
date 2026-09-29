@@ -71,3 +71,5 @@ def test_excel_export_structure():
     # 6. Assert Sheet 4 Traceability has linked cases
     ws4 = wb["Traceability"]
     assert ws4.cell(row=2, column=1).value == "REQ-001"
+
+# Commit ref: 92
