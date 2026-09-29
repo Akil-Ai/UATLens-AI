@@ -211,5 +211,3 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
     </div>
   );
 };
-
-# Commit ref: 83
