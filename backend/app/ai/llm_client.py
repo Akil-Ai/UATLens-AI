@@ -941,5 +941,3 @@ class LLMClient:
 
 
 llm_client = LLMClient()
-
-# Commit ref: 34
