@@ -63,3 +63,5 @@ class BulkUpdateTestCasesRequest(BaseModel):
     test_case_ids: List[str]
     action: str = Field(description="'approve', 'delete', 'set_priority', 'mark_reviewed'")
     value: Optional[str] = None
+
+# Commit ref: 19
