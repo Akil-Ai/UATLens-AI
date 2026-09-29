@@ -219,5 +219,3 @@ def validate_test_suite(
         "coverage_gaps": coverage_gaps,
         "clarification_items": clarification_items,
     }
-
-# Commit ref: 39
