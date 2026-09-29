@@ -51,5 +51,3 @@ const config: Config = {
 };
 
 export default config;
-
-# Commit ref: 6

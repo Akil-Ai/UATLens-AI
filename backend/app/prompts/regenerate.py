@@ -20,5 +20,3 @@ User Specific Instruction: {instruction}
 
 Generate the updated content for this field or row.
 """
-
-# Commit ref: 30

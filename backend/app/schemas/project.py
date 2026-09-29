@@ -37,5 +37,3 @@ class ProjectSummary(BaseModel):
     test_case_count: int = 0
     requirement_count: int = 0
     flag_count: int = 0
-
-# Commit ref: 17

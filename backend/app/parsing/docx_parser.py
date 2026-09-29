@@ -74,5 +74,3 @@ def parse_docx(file_bytes: bytes) -> Tuple[str, List[str], List[Dict[str, Any]]]
 
     full_text = "\n\n".join(lines).strip()
     return full_text, headings, tables_summary
-
-# Commit ref: 24

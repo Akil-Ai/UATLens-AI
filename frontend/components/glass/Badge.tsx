@@ -97,5 +97,3 @@ export const Badge: React.FC<BadgeProps> = ({
     </span>
   );
 };
-
-# Commit ref: 57

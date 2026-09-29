@@ -23,5 +23,3 @@ export const BackgroundOrbs: React.FC = () => {
     </div>
   );
 };
-
-# Commit ref: 58

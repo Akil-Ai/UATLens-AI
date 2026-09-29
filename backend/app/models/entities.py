@@ -151,5 +151,3 @@ class ExportHistory(Base):
     exported_at = Column(DateTime, default=utc_now)
 
     project = relationship("Project", back_populates="export_history")
-
-# Commit ref: 15

@@ -12,5 +12,3 @@ async def parse_document(file: UploadFile = File(...)):
     """
     result = await parse_uploaded_file(file)
     return result
-
-# Commit ref: 47

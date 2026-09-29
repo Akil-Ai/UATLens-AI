@@ -293,5 +293,3 @@ Run the full demo-critical flow from section 11 in the browser, record a walkthr
 - If the agent tries to do everything at once, tell it: "Stop. Complete only Phase N, verify in the browser, then wait."
 - Do a full dry run of the sample flow at least 3 times before presenting, and keep a screen recording as backup.
 - This stack (Next.js, FastAPI, Claude API) matches your PPT, so you can present it honestly. If you switch to Gemini, update the slide or mention it in Q&A.
-
-# Commit ref: 97

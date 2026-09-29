@@ -31,5 +31,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-# Commit ref: 85

@@ -10,5 +10,3 @@ class SuiteValidationReport(BaseModel):
     flags_by_type: Dict[str, int] = Field(default_factory=dict)
     coverage_gaps: List[str] = Field(default_factory=list)
     clarification_items: List[Dict[str, Any]] = Field(default_factory=list)
-
-# Commit ref: 20

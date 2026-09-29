@@ -265,5 +265,3 @@ def generate_excel_workbook(
     wb.save(stream)
     stream.seek(0)
     return stream
-
-# Commit ref: 43

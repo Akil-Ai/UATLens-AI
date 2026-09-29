@@ -60,5 +60,3 @@ def test_admin_override_precondition_flag():
     flags = validate_test_case(tc, raw_document="Admin can override an order status.")
     flag_types = [f["type"] for f in flags]
     assert "Missing Precondition Details" in flag_types
-
-# Commit ref: 91

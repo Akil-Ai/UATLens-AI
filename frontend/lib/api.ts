@@ -160,5 +160,3 @@ export async function validateSuite(projectId: string) {
   if (!res.ok) throw new Error("Failed to validate test suite.");
   return res.json();
 }
-
-# Commit ref: 56

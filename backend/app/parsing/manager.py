@@ -58,5 +58,3 @@ async def parse_uploaded_file(file: UploadFile) -> Dict[str, Any]:
         "tables": tables,
         "warnings": warnings,
     }
-
-# Commit ref: 25

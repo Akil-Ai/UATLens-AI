@@ -33,5 +33,3 @@ def parse_pdf(file_bytes: bytes) -> Tuple[str, List[str], List[Dict[str, Any]], 
 
     tables: List[Dict[str, Any]] = []  # Simple summary
     return full_text, headings, tables, warnings
-
-# Commit ref: 23
