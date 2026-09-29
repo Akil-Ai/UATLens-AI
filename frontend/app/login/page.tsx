@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -38,6 +38,18 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [authSuccess, setAuthSuccess] = useState(false);
+  const [isAlreadyAuth, setIsAlreadyAuth] = useState(false);
+
+  // Check if session auth is already active
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hasAuthCookie = document.cookie.split("; ").some((c) => c.startsWith("uatlens_auth="));
+      const hasUserSession = sessionStorage.getItem("uatlens_user");
+      if (hasAuthCookie && hasUserSession) {
+        setIsAlreadyAuth(true);
+      }
+    }
+  }, []);
 
   // Left-side Interactive Tilt & Mouse Pos
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -74,16 +86,33 @@ export default function LoginPage() {
     setRipples((prev) => [...prev.slice(-4), newRipple]);
   };
 
+  // Store session and authenticate
+  const applyAuthentication = (userEmail: string, userName: string, userRole: string) => {
+    // Session cookie: no expires/max-age means deleted automatically when browser closes!
+    document.cookie = "uatlens_auth=1; path=/; SameSite=Lax";
+    const profile = {
+      email: userEmail,
+      name: userName,
+      role: userRole,
+      loginTime: new Date().toISOString(),
+    };
+    sessionStorage.setItem("uatlens_user", JSON.stringify(profile));
+  };
+
   // Social login simulation
-  const handleSocialLogin = (_provider: "Google" | "GitHub") => {
+  const handleSocialLogin = (provider: "Google" | "GitHub") => {
     setIsLoading(true);
+    const chosenEmail = provider === "Google" ? "alex.morgan@enterprise.io" : "alex-dev@github.enterprise";
+    const chosenName = provider === "Google" ? "Alex Morgan" : "Alex Morgan (GitHub)";
+    applyAuthentication(chosenEmail, chosenName, "QA Lead");
+
     setTimeout(() => {
       setIsLoading(false);
       setAuthSuccess(true);
       setTimeout(() => {
         router.push("/");
-      }, 1000);
-    }, 700);
+      }, 700);
+    }, 600);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -91,14 +120,17 @@ export default function LoginPage() {
     if (!email || !password) return;
     setIsLoading(true);
 
-    // Simulate liquid auth transition
+    const userName = name || email.split("@")[0].replace(".", " ") || "Alex Morgan";
+    applyAuthentication(email, userName, role);
+
+    // Liquid auth transition
     setTimeout(() => {
       setIsLoading(false);
       setAuthSuccess(true);
       setTimeout(() => {
         router.push("/");
-      }, 1200);
-    }, 900);
+      }, 700);
+    }, 600);
   };
 
   return (
@@ -115,14 +147,21 @@ export default function LoginPage() {
           />
         </Link>
 
-        {/* Back to Home Liquid Pill */}
-        <Link
-          href="/"
-          className="liquid-glass-pill flex items-center space-x-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:text-blue-700 transition-all cursor-pointer shadow-xs border border-blue-200/50"
-        >
-          <ArrowLeft className="w-3.5 h-3.5 text-blue-600" />
-          <span>Back to Workspace</span>
-        </Link>
+        {/* Header Right Status / Back Link */}
+        {isAlreadyAuth ? (
+          <Link
+            href="/"
+            className="liquid-glass-pill flex items-center space-x-2 px-4 py-2 text-xs font-semibold text-slate-700 hover:text-blue-700 transition-all cursor-pointer shadow-xs border border-blue-200/50"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-blue-600" />
+            <span>Enter Workspace</span>
+          </Link>
+        ) : (
+          <div className="liquid-glass-pill flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-xs border border-blue-200/40">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] text-slate-600 font-medium">Enterprise Security Guardrail</span>
+          </div>
+        )}
       </header>
 
       {/* Main Split Layout: Left Interactive Attraction | Right Liquid Account Form */}

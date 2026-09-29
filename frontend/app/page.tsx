@@ -52,9 +52,26 @@ export default function Home() {
   const [streamProgress, setStreamProgress] = useState({ completed: 0, total: 0, message: "" });
   const abortRef = useRef<AbortController | null>(null);
 
-  // ── Load projects on mount ──
+  // ── Authentication gate ──
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  // ── Verify session authentication on mount ──
   useEffect(() => {
-    loadProjects();
+    if (typeof window !== "undefined") {
+      const hasAuthCookie = document.cookie
+        .split("; ")
+        .some((c) => c.startsWith("uatlens_auth="));
+      const userSession = sessionStorage.getItem("uatlens_user");
+
+      if (!hasAuthCookie || !userSession) {
+        setIsAuthenticated(false);
+        window.location.href = "/login";
+        return;
+      }
+
+      setIsAuthenticated(true);
+      loadProjects();
+    }
   }, []);
 
   const loadProjects = async () => {
@@ -230,6 +247,29 @@ export default function Home() {
     },
     []
   );
+
+  if (isAuthenticated === null || !isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden">
+        <BackgroundOrbs />
+        <div className="liquid-glass p-8 sm:p-10 rounded-3xl flex flex-col items-center space-y-4 border border-white/90 shadow-2xl relative z-10 max-w-sm w-full text-center">
+          <img
+            src="/logo.png"
+            alt="UATlens AI"
+            className="h-10 w-auto object-contain animate-pulse"
+          />
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-slate-800">Verifying Authorization</h3>
+            <p className="text-xs text-slate-500">Redirecting to secure login portal...</p>
+          </div>
+          <div className="flex items-center space-x-2 text-[11px] font-semibold text-blue-700 bg-blue-50/80 px-3 py-1 rounded-full border border-blue-200/50">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
+            <span>Authentication Required</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen">
