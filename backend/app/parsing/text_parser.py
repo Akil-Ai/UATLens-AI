@@ -50,3 +50,5 @@ def parse_markdown_or_text(text_content: str) -> Tuple[str, List[str], List[Dict
         })
 
     return text_content.strip(), headings, tables
+
+# Commit ref: 22
