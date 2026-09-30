@@ -167,7 +167,7 @@ export async function regenerateField(projectId: string, testCaseId: string, tar
 }
 
 export async function bulkUpdateTestCases(projectId: string, testCaseIds: string[], action: string, value?: string) {
-  const res = await authFetch(`${API_BASE}/test-cases/bulk`, {
+  const res = await authFetch(`${API_BASE}/test-cases/bulk?project_id=${encodeURIComponent(projectId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ project_id: projectId, test_case_ids: testCaseIds, action, value }),

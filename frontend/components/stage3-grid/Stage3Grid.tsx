@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { TestCase, ScenarioType, PriorityType, TestCaseStatus, FlagItem } from "@/types";
 import { Badge } from "@/components/glass/Badge";
-import { updateTestCase, undoTestCase, regenerateField, deleteTestCase, bulkUpdateTestCases } from "@/lib/api";
+import { updateTestCase, undoTestCase, regenerateField, deleteTestCase, bulkUpdateTestCases, fetchTestCases } from "@/lib/api";
 
 interface Stage3GridProps {
   projectId: string;
@@ -176,10 +176,9 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
   const handleUndo = async (tcId: string) => {
     try {
       await undoTestCase(tcId, projectId);
-      // Reload fresh list or revert in local
-      const res = await fetch(`/api/test-cases?project_id=${projectId}`);
-      if (res.ok) {
-        const fresh = await res.json();
+      // Reload fresh list using authenticated API helper
+      const fresh = await fetchTestCases(projectId);
+      if (Array.isArray(fresh)) {
         onTestCasesChange(fresh);
       }
     } catch (err) {

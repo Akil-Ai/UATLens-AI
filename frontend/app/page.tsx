@@ -133,10 +133,11 @@ export default function Home() {
     // Load existing context if available
     try {
       const ctx = await fetchContext(id);
-      if (ctx && ctx.context) {
-        setContextData(ctx.context);
+      // Backend returns ExtractedContextData directly (roles, requirements, etc.)
+      if (ctx && (ctx.roles || ctx.requirements)) {
+        setContextData(ctx);
         setCurrentStep(2);
-        setMaxReachedStep(2);
+        setMaxReachedStep(2 as StepNumber);
       }
     } catch { /* no saved context */ }
 

@@ -706,6 +706,7 @@ def bulk_update_test_cases(
     project: Project = Depends(get_project_editor),
     db: Session = Depends(get_db)
 ):
+    # project_id is injected via get_project_editor from query string
     cases = db.query(TestCase).filter(
         TestCase.project_id == project.id,
         TestCase.id.in_(payload.test_case_ids)

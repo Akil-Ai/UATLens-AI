@@ -185,6 +185,7 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
         setPermissionRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)));
         setCorrectingRuleId(null);
         setCorrectionNotes("");
+        setCorrectionDecision("Allowed");
       } catch (err) {
         console.error("Review permission rule failed:", err);
       }

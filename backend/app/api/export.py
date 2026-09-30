@@ -162,10 +162,10 @@ def export_test_cases(
         excel_stream = generate_excel_workbook(
             tc_dicts,
             req_dicts,
+            project.name,
             clar_dicts,
             perm_dicts,
             coverage_summary,
-            project.name
         )
         response = StreamingResponse(
             excel_stream,
