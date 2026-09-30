@@ -994,7 +994,7 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
             )}
           </div>
           <button
-            onClick={onProceedToGenerate}
+            onClick={() => onProceedToGenerate()}
             disabled={isGenerating}
             className="px-7 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider text-white bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-lg shadow-indigo-500/25 transition-all flex items-center space-x-2"
           >

@@ -69,7 +69,7 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
       const statusParam = exportScope === "approved" ? "&status=Approved" : "";
       const downloadUrl = `/api/export/${projectId}?format=${format}${statusParam}`;
 
-      const token = getAccessToken();
+      const token = await getAccessToken();
       const headers: Record<string, string> = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;

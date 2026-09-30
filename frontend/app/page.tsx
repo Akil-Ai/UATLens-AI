@@ -190,17 +190,26 @@ export default function Home() {
   }, [rawText, projectName, currentProject]);
 
   // ── Stage 2 → Stage 3: Generate Test Cases (SSE Streaming) ──
-  const handleGenerateTestCases = useCallback(async (targetReqId?: string) => {
+  const handleGenerateTestCases = useCallback(async (targetReqId?: string | unknown) => {
     if (!currentProject?.id) return;
+    const cleanTargetId =
+      typeof targetReqId === "string" &&
+      targetReqId.trim().length > 0 &&
+      targetReqId !== "[object Object]"
+        ? targetReqId.trim()
+        : undefined;
+
+    setCurrentStep(3);
+    setMaxReachedStep((prev) => Math.max(prev, 3) as StepNumber);
     setIsGenerating(true);
     setIsStreaming(true);
-    if (!targetReqId) {
+    if (!cleanTargetId) {
       setTestCases([]);
     }
     setStreamProgress({
       completed: 0,
       total: 0,
-      message: targetReqId ? `Regenerating ${targetReqId}...` : "Starting generation...",
+      message: cleanTargetId ? `Regenerating ${cleanTargetId}...` : "Starting generation...",
     });
 
     // Save any context edits before generating
@@ -214,11 +223,11 @@ export default function Home() {
     abortRef.current = controller;
 
     try {
-      const url = targetReqId
-        ? `/api/generate-test-cases?project_id=${currentProject.id}&target_requirement_id=${encodeURIComponent(targetReqId)}`
+      const url = cleanTargetId
+        ? `/api/generate-test-cases?project_id=${currentProject.id}&target_requirement_id=${encodeURIComponent(cleanTargetId)}`
         : `/api/generate-test-cases?project_id=${currentProject.id}`;
 
-      const token = getAccessToken();
+      const token = await getAccessToken();
       const headers: Record<string, string> = {};
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
@@ -231,7 +240,14 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error("Server returned an error starting generation.");
+        let errDetail = "";
+        try {
+          const errJson = await response.json();
+          errDetail = errJson.detail || errJson.message || "";
+        } catch {
+          errDetail = await response.text();
+        }
+        throw new Error(errDetail || `Server returned status ${response.status} starting generation.`);
       }
 
       const reader = response.body?.getReader();
@@ -239,7 +255,7 @@ export default function Home() {
 
       const decoder = new TextDecoder();
       let buffer = "";
-      const accumulated: TestCase[] = targetReqId ? [...testCases.filter(t => t.requirement_id !== targetReqId)] : [];
+      const accumulated: TestCase[] = cleanTargetId ? [...testCases.filter(t => t.requirement_id !== cleanTargetId)] : [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -375,7 +391,7 @@ export default function Home() {
                       <Stage2Context
               contextData={contextData}
               onContextDataChange={setContextData}
-              onProceedToGenerate={handleGenerateTestCases}
+              onProceedToGenerate={() => handleGenerateTestCases()}
               onBackToInput={() => goToStep(1)}
               isGenerating={isGenerating}
               projectId={currentProject?.id}
