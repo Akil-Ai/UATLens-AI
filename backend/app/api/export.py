@@ -167,34 +167,50 @@ def export_test_cases(
             perm_dicts,
             coverage_summary,
         )
-        response = StreamingResponse(
-            excel_stream,
+        excel_bytes = excel_stream.getvalue()
+        response = Response(
+            content=excel_bytes,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{safe_title}_Test_Suite.xlsx"'}
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}_Test_Suite.xlsx"',
+                "Content-Length": str(len(excel_bytes)),
+            }
         )
 
     elif format == "csv":
         csv_stream = generate_standard_csv(tc_dicts)
+        csv_bytes = ("\ufeff" + csv_stream.getvalue()).encode("utf-8")
         response = Response(
-            content="\ufeff" + csv_stream.getvalue(),
+            content=csv_bytes,
             media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{safe_title}_Test_Cases.csv"'}
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}_Test_Cases.csv"',
+                "Content-Length": str(len(csv_bytes)),
+            }
         )
 
     elif format == "zip":
         zip_stream = generate_zip_bundle(tc_dicts, req_dicts, clar_dicts, perm_dicts)
-        response = StreamingResponse(
-            zip_stream,
+        zip_bytes = zip_stream.getvalue()
+        response = Response(
+            content=zip_bytes,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{safe_title}_UAT_Bundle.zip"'}
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}_UAT_Bundle.zip"',
+                "Content-Length": str(len(zip_bytes)),
+            }
         )
 
     elif format == "jira":
         jira_stream = generate_jira_csv(tc_dicts)
+        jira_bytes = ("\ufeff" + jira_stream.getvalue()).encode("utf-8")
         response = Response(
-            content="\ufeff" + jira_stream.getvalue(),
+            content=jira_bytes,
             media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{safe_title}_Jira_Import.csv"'}
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}_Jira_Import.csv"',
+                "Content-Length": str(len(jira_bytes)),
+            }
         )
 
     elif format == "json":
@@ -210,11 +226,14 @@ def export_test_cases(
             "clarifications": clar_dicts,
             "permission_rules": perm_dicts,
         }
-        json_str = json.dumps(export_payload, indent=2, ensure_ascii=False)
+        json_bytes = json.dumps(export_payload, indent=2, ensure_ascii=False).encode("utf-8")
         response = Response(
-            content=json_str,
+            content=json_bytes,
             media_type="application/json; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{safe_title}_Test_Suite.json"'}
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_title}_Test_Suite.json"',
+                "Content-Length": str(len(json_bytes)),
+            }
         )
 
     # 4. Record export success ONLY after export is built successfully

@@ -85,7 +85,7 @@ def generate_excel_workbook(
     # ──────────────── SHEET 1: TEST CASES ────────────────
     ws1 = wb.active
     ws1.title = "Test Cases"
-    ws1.views.sheetView[0].showGridLines = True
+    ws1.sheet_view.showGridLines = True
 
     tc_headers = [
         "ID", "Scenario", "Preconditions", "Steps", "Test Data", "Expected Result",
@@ -101,6 +101,9 @@ def generate_excel_workbook(
         cell.border = thin_border
     ws1.row_dimensions[1].height = 28
     ws1.freeze_panes = "A2"
+    if ws1.sheet_view and ws1.sheet_view.selection:
+        ws1.sheet_view.selection[0].activeCell = "A2"
+        ws1.sheet_view.selection[0].sqref = "A2"
 
     for row_idx, tc in enumerate(test_cases, start=2):
         preconds = tc.get("preconditions", [])
@@ -151,7 +154,7 @@ def generate_excel_workbook(
 
     # ──────────────── SHEET 2: REQUIREMENTS ────────────────
     ws2 = wb.create_sheet(title="Requirements")
-    ws2.views.sheetView[0].showGridLines = True
+    ws2.sheet_view.showGridLines = True
     req_headers = ["Requirement ID", "Title", "Text", "Source Quote", "Roles Involved", "Expected Outcome"]
     ws2.append(req_headers)
     for col_idx in range(1, len(req_headers) + 1):
@@ -162,6 +165,9 @@ def generate_excel_workbook(
         cell.border = thin_border
     ws2.row_dimensions[1].height = 28
     ws2.freeze_panes = "A2"
+    if ws2.sheet_view and ws2.sheet_view.selection:
+        ws2.sheet_view.selection[0].activeCell = "A2"
+        ws2.sheet_view.selection[0].sqref = "A2"
 
     for r_idx, r in enumerate(requirements, start=2):
         roles_str = ", ".join(r.get("roles_involved", [])) if isinstance(r.get("roles_involved"), list) else str(r.get("roles_involved", ""))
@@ -182,7 +188,7 @@ def generate_excel_workbook(
 
     # ──────────────── SHEET 3: CLARIFICATIONS ────────────────
     ws3 = wb.create_sheet(title="Clarifications")
-    ws3.views.sheetView[0].showGridLines = True
+    ws3.sheet_view.showGridLines = True
     clar_headers = ["ID", "Requirement ID", "Issue Type", "Question", "Status", "Authoritative Answer", "Confirmed By", "Dismissal Reason"]
     ws3.append(clar_headers)
     for col_idx in range(1, len(clar_headers) + 1):
@@ -193,6 +199,9 @@ def generate_excel_workbook(
         cell.border = thin_border
     ws3.row_dimensions[1].height = 28
     ws3.freeze_panes = "A2"
+    if ws3.sheet_view and ws3.sheet_view.selection:
+        ws3.sheet_view.selection[0].activeCell = "A2"
+        ws3.sheet_view.selection[0].sqref = "A2"
 
     for c_idx, c in enumerate(clarifications, start=2):
         c_data = [
@@ -214,7 +223,7 @@ def generate_excel_workbook(
 
     # ──────────────── SHEET 4: PERMISSION RULES ────────────────
     ws4 = wb.create_sheet(title="Permission Rules")
-    ws4.views.sheetView[0].showGridLines = True
+    ws4.sheet_view.showGridLines = True
     perm_headers = ["ID", "Role", "Action", "Resource", "Scope", "Condition", "Decision", "Review Status", "Revision"]
     ws4.append(perm_headers)
     for col_idx in range(1, len(perm_headers) + 1):
@@ -225,6 +234,9 @@ def generate_excel_workbook(
         cell.border = thin_border
     ws4.row_dimensions[1].height = 28
     ws4.freeze_panes = "A2"
+    if ws4.sheet_view and ws4.sheet_view.selection:
+        ws4.sheet_view.selection[0].activeCell = "A2"
+        ws4.sheet_view.selection[0].sqref = "A2"
 
     for p_idx, p in enumerate(permission_rules, start=2):
         p_data = [
@@ -247,7 +259,7 @@ def generate_excel_workbook(
 
     # ──────────────── SHEET 5: COVERAGE SUMMARY ────────────────
     ws5 = wb.create_sheet(title="Coverage Summary")
-    ws5.views.sheetView[0].showGridLines = True
+    ws5.sheet_view.showGridLines = True
     cov_headers = ["Metric Category", "Metric Name", "Value", "Scope / Details"]
     ws5.append(cov_headers)
     for col_idx in range(1, len(cov_headers) + 1):
