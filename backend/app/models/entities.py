@@ -31,11 +31,14 @@ class Project(Base):
     name = Column(String(255), nullable=False, default="Untitled Project")
     raw_text = Column(Text, nullable=False, default="")
     parsed_structure = Column(JSONType, nullable=True, default=dict)
+    owner_id = Column(String(36), nullable=True)
+    current_suite_version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), default=utc_now)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
         Index("ix_projects_created_at", "created_at"),
+        Index("ix_projects_owner_id", "owner_id"),
     )
 
     requirements = relationship("Requirement", back_populates="project", cascade="all, delete-orphan")
@@ -44,6 +47,57 @@ class Project(Base):
     export_history = relationship("ExportHistory", back_populates="project", cascade="all, delete-orphan")
     clarification_decisions = relationship("ClarificationDecision", back_populates="project", cascade="all, delete-orphan")
     permission_rules = relationship("PermissionRule", back_populates="project", cascade="all, delete-orphan")
+    members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
+    suite_versions = relationship("TestSuiteVersion", back_populates="project", cascade="all, delete-orphan")
+
+
+class ProjectMember(Base):
+    """
+    Project collaborator membership for multi-user access control.
+    Role: owner | editor | viewer
+    """
+    __tablename__ = "project_members"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), nullable=False)
+    user_email = Column(String(255), nullable=True)
+    role = Column(String(30), nullable=False, default="viewer")
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    __table_args__ = (
+        Index("ix_project_members_lookup", "project_id", "user_id", unique=True),
+        Index("ix_project_members_user_id", "user_id"),
+    )
+
+    project = relationship("Project", back_populates="members")
+
+
+class TestSuiteVersion(Base):
+    """
+    Tracks complete test suite versions and generation history.
+    """
+    __tablename__ = "test_suite_versions"
+    __test__ = False
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    version_number = Column(Integer, nullable=False, default=1)
+    model_provider = Column(String(50), nullable=True)
+    model_name = Column(String(100), nullable=True)
+    target_requirement_id = Column(String(50), nullable=True)
+    generation_inputs = Column(JSONType, default=dict)
+    status = Column(String(30), nullable=False, default="Completed")
+    error_message = Column(Text, nullable=True)
+    test_case_count = Column(Integer, nullable=False, default=0)
+    snapshot = Column(JSONType, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    __table_args__ = (
+        Index("ix_test_suite_versions_lookup", "project_id", "version_number"),
+    )
+
+    project = relationship("Project", back_populates="suite_versions")
 
 
 class ExtractedContext(Base):
@@ -107,6 +161,10 @@ class TestCase(Base):
     source_quote = Column(Text, nullable=False, default="")
     status = Column(String(30), nullable=False, default="Draft")
     is_stale = Column(Boolean, default=False)
+    permission_rule_ids = Column(JSONType, default=list)
+    permission_rule_revision = Column(Integer, nullable=True)
+    is_blocked = Column(Boolean, default=False)
+    blocked_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
@@ -209,7 +267,8 @@ class ExportHistory(Base):
 class ClarificationDecision(Base):
     """
     Stores reviewer decisions on AI-detected ambiguities (from ExtractedContext.ambiguities).
-    One record per ambiguity per project. Decisions persist across sessions.
+    Supports durable lifecycle: Open -> Answered -> Resolved, plus Dismissed with mandatory reason.
+    Preserves audit history and links downstream test invalidation.
     """
     __tablename__ = "clarification_decisions"
 
@@ -219,14 +278,32 @@ class ClarificationDecision(Base):
     issue_type = Column(String(100), nullable=False)      # e.g. "Vague Term"
     description = Column(Text, nullable=False)
     suggested_question = Column(Text, nullable=False)
-    # Reviewer decision
+    source_evidence = Column(Text, nullable=True)
+    document_location = Column(String(150), nullable=True)
+    # Lifecycle status: Open | Answered | Resolved | Dismissed
+    status = Column(String(30), nullable=False, default="Open")
+    # Legacy field preserved for backwards compatibility
     decision = Column(String(30), nullable=False, default="pending")  # pending | accepted | rejected | answered
-    reviewer_answer = Column(Text, nullable=True)   # free-text BA answer
+    reviewer_answer = Column(Text, nullable=True)   # authoritative answer
+    dismissal_reason = Column(Text, nullable=True)  # required if dismissed
+    # Audit trail
+    answered_by = Column(String(100), nullable=True)
+    answered_at = Column(DateTime(timezone=True), nullable=True)
+    confirmed_by = Column(String(100), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    dismissed_by = Column(String(100), nullable=True)
+    dismissed_at = Column(DateTime(timezone=True), nullable=True)
+    reopened_by = Column(String(100), nullable=True)
+    reopened_at = Column(DateTime(timezone=True), nullable=True)
+    history = Column(JSONType, default=list)
+    is_superseded = Column(Boolean, default=False)
+    superseded_by_id = Column(String(36), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
         Index("ix_clarification_decisions_project_id", "project_id"),
+        Index("ix_clarification_decisions_status", "project_id", "status"),
     )
 
     project = relationship("Project", back_populates="clarification_decisions")
@@ -236,21 +313,36 @@ class PermissionRule(Base):
     """
     Stores extracted permission rules for role/action/condition analysis.
     Each row represents one permission entry: who can do what, under what condition.
+    Decision: Allowed | Denied | Unspecified | Conflicting
+    Review Status: Draft | Confirmed | Corrected | Superseded
     """
     __tablename__ = "permission_rules"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(100), nullable=False)           # e.g. "Admin"
-    action = Column(String(255), nullable=False)         # e.g. "Cancel order"
+    action = Column(String(255), nullable=False)         # e.g. "Approve refunds"
+    resource = Column(String(150), nullable=True)        # e.g. "Refunds"
+    scope = Column(String(100), nullable=True)           # e.g. "own records" | "all records"
     condition = Column(Text, nullable=True)               # e.g. "before Shipped"
-    decision = Column(String(20), nullable=False, default="allow")  # allow | deny
+    workflow_state = Column(String(100), nullable=True)  # e.g. "Pending Payment"
+    decision = Column(String(20), nullable=False, default="Allowed")  # Allowed | Denied | Unspecified | Conflicting
+    source_quote = Column(Text, nullable=True)
+    source_location = Column(String(150), nullable=True)
     source_requirement_id = Column(String(50), nullable=True)       # links to REQ-xxx
     source_rule_id = Column(String(50), nullable=True)              # links to BR-xxx
+    review_status = Column(String(30), nullable=False, default="Draft")  # Draft | Confirmed | Corrected | Superseded
+    reviewer_notes = Column(Text, nullable=True)
+    revision = Column(Integer, nullable=False, default=1)
+    is_active = Column(Boolean, nullable=False, default=True)
+    superseded_by_id = Column(String(36), nullable=True)
+    evidence = Column(JSONType, default=dict)
     created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
         Index("ix_permission_rules_project_role", "project_id", "role"),
+        Index("ix_permission_rules_decision", "project_id", "decision"),
     )
 
     project = relationship("Project", back_populates="permission_rules")

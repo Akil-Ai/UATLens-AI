@@ -1,6 +1,4 @@
-"use client";
-
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   PieChart,
   Pie,
@@ -22,15 +20,20 @@ import {
   ArrowRight,
   Filter,
   AlertTriangle,
+  RefreshCw,
+  HelpCircle,
+  Lock,
+  Unlock,
 } from "lucide-react";
-import { TestCase, PermissionCoverageResponse, PermissionCoverageMetric } from "@/types";
-import { fetchPermissionCoverage } from "@/lib/api";
+import { TestCase, PermissionCoverageResponse, ClarificationDecision, RequirementItem } from "@/types";
+import { fetchPermissionCoverage, fetchClarificationDecisions, fetchContext } from "@/lib/api";
 
 interface Stage4DashboardProps {
   testCases: TestCase[];
   onFilterGrid: (filterType: string, value: string) => void;
   onProceedToExport: () => void;
   onBackToGrid: () => void;
+  onNavigateToStage2?: () => void;
   projectId?: string;
 }
 
@@ -39,31 +42,102 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
   onFilterGrid,
   onProceedToExport,
   onBackToGrid,
+  onNavigateToStage2,
   projectId,
 }) => {
-  const [permCoverage, setPermCoverage] = React.useState<PermissionCoverageResponse | null>(null);
-  const [permLoading, setPermLoading] = React.useState(false);
+  const [permCoverage, setPermCoverage] = useState<PermissionCoverageResponse | null>(null);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
 
-  const loadPermCoverage = React.useCallback(async () => {
+  const [allRequirements, setAllRequirements] = useState<RequirementItem[]>([]);
+  const [clarifications, setClarifications] = useState<ClarificationDecision[]>([]);
+  const [loadingContext, setLoadingContext] = useState(false);
+
+  // Load permission coverage, all requirements, and clarifications
+  const loadData = useCallback(async () => {
     if (!projectId) return;
     setPermLoading(true);
+    setPermError(null);
+    setLoadingContext(true);
+
     try {
-      const data = await fetchPermissionCoverage(projectId);
-      setPermCoverage(data);
-    } catch { /* silent */ } finally {
+      const [permData, ctxData, clarData] = await Promise.all([
+        fetchPermissionCoverage(projectId).catch(() => null),
+        fetchContext(projectId).catch(() => null),
+        fetchClarificationDecisions(projectId).catch(() => []),
+      ]);
+
+      if (permData) setPermCoverage(permData);
+      if (ctxData?.requirements) setAllRequirements(ctxData.requirements);
+      if (Array.isArray(clarData)) setClarifications(clarData);
+    } catch (err: any) {
+      setPermError("Failed to load suite coverage metrics. Please retry.");
+    } finally {
       setPermLoading(false);
+      setLoadingContext(false);
     }
   }, [projectId]);
 
-  React.useEffect(() => {
-    loadPermCoverage();
-  }, [loadPermCoverage]);
-  // Metrics calculation
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Suite metrics
   const total = testCases.length;
-  const approved = testCases.filter((tc) => tc.status === "Approved").length;
+  // Approved coverage only counts Approved tests that are NOT stale
+  const approvedCases = testCases.filter((tc) => tc.status === "Approved" && !tc.is_stale);
+  const approved = approvedCases.length;
+  const staleCount = testCases.filter((tc) => tc.is_stale).length;
+  const blockedCount = testCases.filter((tc) => tc.is_blocked).length;
   const needsClarification = testCases.filter((tc) => tc.status === "Needs Clarification").length;
   const totalFlags = testCases.reduce((acc, tc) => acc + (tc.flags ? tc.flags.length : 0), 0);
   const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0;
+
+  // Unresolved clarifications count (Open or Answered, not Resolved or Dismissed)
+  const unresolvedClarificationsCount = clarifications.filter(
+    (c) => c.status !== "Resolved" && c.decision !== "accepted" && c.status !== "Dismissed" && c.decision !== "rejected"
+  ).length;
+
+  // All Requirement IDs combined: from context definition + test case mappings
+  const allReqIds = useMemo(() => {
+    const ids = new Set<string>();
+    allRequirements.forEach((r) => ids.add(r.id));
+    testCases.forEach((tc) => {
+      if (tc.requirement_id) ids.add(tc.requirement_id);
+    });
+    return Array.from(ids);
+  }, [allRequirements, testCases]);
+
+  // Requirement Coverage Breakdown (including zero-test requirements)
+  const reqCoverage = useMemo(() => {
+    const map: Record<string, { positive: boolean; negative: boolean; boundary: boolean; count: number; approvedCount: number }> = {};
+    allReqIds.forEach((rid) => {
+      map[rid] = { positive: false, negative: false, boundary: false, count: 0, approvedCount: 0 };
+    });
+
+    testCases.forEach((tc) => {
+      const rid = tc.requirement_id || "Unmapped";
+      if (!map[rid]) {
+        map[rid] = { positive: false, negative: false, boundary: false, count: 0, approvedCount: 0 };
+      }
+      map[rid].count++;
+      if (tc.status === "Approved" && !tc.is_stale) {
+        map[rid].approvedCount++;
+      }
+      if (tc.scenario_type === "Positive") map[rid].positive = true;
+      if (tc.scenario_type === "Negative") map[rid].negative = true;
+      if (tc.scenario_type === "Boundary") map[rid].boundary = true;
+    });
+
+    return map;
+  }, [allReqIds, testCases]);
+
+  // Covered vs Missing requirements
+  const totalReqCount = allReqIds.length;
+  const coveredReqCount = Object.values(reqCoverage).filter((c) => c.count > 0).length;
+  const approvedReqCount = Object.values(reqCoverage).filter((c) => c.approvedCount > 0).length;
+  const generatedReqCoveragePct = totalReqCount > 0 ? Math.round((coveredReqCount / totalReqCount) * 100) : null;
+  const approvedReqCoveragePct = totalReqCount > 0 ? Math.round((approvedReqCount / totalReqCount) * 100) : null;
 
   // Donut: Scenario Type distribution
   const typeData = useMemo(() => {
@@ -103,19 +177,6 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
     }));
   }, [testCases]);
 
-  // Requirement Coverage Matrix
-  const reqCoverage = useMemo(() => {
-    const map: Record<string, { positive: boolean; negative: boolean; boundary: boolean }> = {};
-    testCases.forEach((tc) => {
-      const rid = tc.requirement_id || "Unmapped";
-      if (!map[rid]) map[rid] = { positive: false, negative: false, boundary: false };
-      if (tc.scenario_type === "Positive") map[rid].positive = true;
-      if (tc.scenario_type === "Negative") map[rid].negative = true;
-      if (tc.scenario_type === "Boundary") map[rid].boundary = true;
-    });
-    return map;
-  }, [testCases]);
-
   // Coverage gaps warnings
   const coverageWarnings = useMemo(() => {
     const warnings: string[] = [];
@@ -138,10 +199,10 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
               <span>Suite Intelligence & Coverage</span>
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-              UAT Test Suite Analytics
+              UAT Test Suite Analytics & Traceability
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Visual validation distribution, role allocation, and requirement coverage analysis.
+              Accurate requirement coverage, role permission compliance, and quality gate indicators.
             </p>
           </div>
 
@@ -162,54 +223,113 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
           </div>
         </div>
 
-        {/* 4 Glass Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+        {/* Error Banner */}
+        {permError && (
+          <div className="mt-4 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600" />
+              <span>{permError}</span>
+            </div>
+            <button
+              onClick={loadData}
+              className="px-3 py-1 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 shadow-xs text-xs"
+            >
+              Retry Loading
+            </button>
+          </div>
+        )}
+
+        {/* 5 Glass Stat Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 mt-6">
           {/* Total Cases */}
-          <div className="p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Total Test Cases
             </span>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-extrabold text-slate-900">{total}</span>
-              <FileCheck2 className="w-5 h-5 text-indigo-500" />
+              <span className="text-2xl font-extrabold text-slate-900">{total}</span>
+              <FileCheck2 className="w-4 h-4 text-indigo-500" />
             </div>
-            <p className="text-[11px] text-slate-500">Structured & verified</p>
+            <p className="text-[10px] text-slate-500">
+              {staleCount > 0 ? `${staleCount} stale · ` : ""}{blockedCount > 0 ? `${blockedCount} blocked` : "Active suite"}
+            </p>
           </div>
 
-          {/* Approved */}
-          <div className="p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Approval Rate
+          {/* Requirement Coverage */}
+          <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Requirement Coverage
             </span>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-extrabold text-emerald-600">{approvalRate}%</span>
-              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+              <span className="text-2xl font-extrabold text-indigo-600">
+                {generatedReqCoveragePct !== null ? `${generatedReqCoveragePct}%` : "N/A"}
+              </span>
+              <TrendingUp className="w-4 h-4 text-indigo-500" />
             </div>
-            <p className="text-[11px] text-slate-500">{approved} approved of {total}</p>
+            <p className="text-[10px] text-slate-500">
+              {coveredReqCount} of {totalReqCount || "0"} requirements
+            </p>
           </div>
 
-          {/* Open Flags */}
-          <div className="p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Open Flags
+          {/* Approved Coverage */}
+          <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Approved Coverage
             </span>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-extrabold text-amber-600">{totalFlags}</span>
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              <span className="text-2xl font-extrabold text-emerald-600">
+                {approvedReqCoveragePct !== null ? `${approvedReqCoveragePct}%` : "N/A"}
+              </span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             </div>
-            <p className="text-[11px] text-slate-500">Quality checkpoints detected</p>
+            <p className="text-[10px] text-slate-500">
+              {approved} approved (stale excluded)
+            </p>
           </div>
 
-          {/* Needs Clarification */}
-          <div className="p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Needs Clarification
+          {/* Unresolved Clarifications */}
+          <div
+            onClick={() => onNavigateToStage2 && onNavigateToStage2()}
+            className={`p-4 rounded-2xl border shadow-xs space-y-1 transition-all ${
+              unresolvedClarificationsCount > 0
+                ? "bg-amber-50/70 border-amber-200 hover:bg-amber-100/70 cursor-pointer"
+                : "bg-white/80 border-slate-200/80"
+            }`}
+            title={unresolvedClarificationsCount > 0 ? "Click to resolve in Stage 2" : ""}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                Open Clarifications
+              </span>
+              {unresolvedClarificationsCount > 0 && (
+                <span className="text-[9px] text-amber-800 font-semibold underline">Stage 2 →</span>
+              )}
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className={`text-2xl font-extrabold ${unresolvedClarificationsCount > 0 ? "text-amber-700" : "text-slate-900"}`}>
+                {unresolvedClarificationsCount}
+              </span>
+              <HelpCircle className="w-4 h-4 text-amber-600" />
+            </div>
+            <p className="text-[10px] text-slate-500">
+              {unresolvedClarificationsCount > 0 ? "Require BA resolution" : "All resolved ✓"}
+            </p>
+          </div>
+
+          {/* Quality Gates / Stale & Blocked */}
+          <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Quality Checkpoints
             </span>
             <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-extrabold text-purple-600">{needsClarification}</span>
-              <AlertCircle className="w-5 h-5 text-purple-500" />
+              <span className="text-2xl font-extrabold text-rose-600">
+                {staleCount + blockedCount + totalFlags}
+              </span>
+              <AlertTriangle className="w-4 h-4 text-rose-500" />
             </div>
-            <p className="text-[11px] text-slate-500">Pending BA input</p>
+            <p className="text-[10px] text-slate-500">
+              {staleCount} stale · {blockedCount} blocked
+            </p>
           </div>
         </div>
 
@@ -329,7 +449,7 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
                 Role Permission Test Coverage
               </h4>
               <button
-                onClick={loadPermCoverage}
+                onClick={loadData}
                 disabled={permLoading}
                 className="text-[11px] text-indigo-600 font-semibold hover:underline"
               >
@@ -399,24 +519,48 @@ export const Stage4Dashboard: React.FC<Stage4DashboardProps> = ({
         {/* Requirement Coverage Heatmap Matrix */}
         <div className="mt-6 p-5 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Per-Requirement Coverage Matrix
-            </h4>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                Per-Requirement Coverage & Gap Analysis
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Full project scope (including zero-test requirements). Click any requirement gap to filter in Stage 3.
+              </p>
+            </div>
             <span className="text-[11px] text-slate-400">
               Positive • Negative • Boundary
             </span>
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
             {Object.entries(reqCoverage).map(([rid, cov]) => (
               <div
                 key={rid}
                 onClick={() => onFilterGrid("requirement", rid)}
-                className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/60 hover:border-indigo-300 hover:bg-white transition-all cursor-pointer space-y-2"
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
+                  cov.count === 0
+                    ? "bg-rose-50/50 border-rose-200 hover:bg-rose-50"
+                    : cov.approvedCount > 0
+                    ? "bg-emerald-50/30 border-emerald-200/80 hover:bg-white"
+                    : "bg-slate-50/90 border-slate-200/60 hover:border-indigo-300 hover:bg-white"
+                }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-slate-800">{rid}</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-xs font-bold text-slate-800">{rid}</span>
+                    {cov.count === 0 ? (
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                        Missing
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500">
+                        {cov.count} case{cov.count > 1 ? "s" : ""}{cov.approvedCount > 0 ? ` · ${cov.approvedCount} approved` : ""}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[10px] text-indigo-600 font-semibold">Filter →</span>
                 </div>
+
                 <div className="flex items-center space-x-2">
                   <span
                     className={`px-2 py-0.5 rounded text-[10px] font-bold ${

@@ -1,7 +1,6 @@
 import re
 import string
-from typing import List, Dict, Any, Tuple, Set
-
+from typing import List, Dict, Any, Tuple, Set, Optional
 
 VAGUE_TERMS = {
     "quickly": "Quantify with specific latency requirement (e.g., < 250ms).",
@@ -15,22 +14,41 @@ VAGUE_TERMS = {
     "as needed": "Clarify explicit trigger conditions and operational thresholds."
 }
 
+# Meaningful operators that MUST be preserved during normalization
+# Stripping these alters business logic (e.g. turning "amount > 5000" into "amount 5000")
+PRESERVED_SYMBOLS = {"<=", ">=", "!=", "<", ">", "=", "%", "$", "+", "-", "."}
+COSMETIC_PUNCTUATION = re.compile(r'[\u201c\u201d\u2018\u2019"\'`,;:()\[\]{}!?~*^\\/_#&@]')
+
 
 def normalize_text_for_search(text: str) -> str:
     """
-    Normalizes text for substring checking: lowercase, strip punctuation, collapse whitespace.
+    Normalizes text for substring and evidence checking:
+    - Normalizes cosmetic whitespace and lowercases
+    - Strips cosmetic punctuation (quotes, commas, brackets)
+    - Strips cosmetic periods (e.g. ellipses, sentence terminators) while PRESERVING decimal numbers (e.g. 24.99)
+    - STRICTLY PRESERVES meaningful symbols: <, >, <=, >=, =, !=, %, $, -, +, and decimals
     """
     if not text:
         return ""
-    # Strip punctuation
-    text = text.translate(str.maketrans("", "", string.punctuation))
-    # Lowercase & collapse whitespace
-    return " ".join(text.lower().split())
+
+    # Replace smart quotes with standard spaces or remove
+    text = text.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+
+    # Remove non-numeric dots (e.g. sentence-ending periods, ellipses, abbreviations)
+    # Preserves dots that are surrounded by digits on both sides (e.g. 3.14, 24.99)
+    text = re.sub(r'(?<!\d)\.|\.(?!\d)', ' ', text)
+
+    # Remove cosmetic punctuation only
+    cleaned = COSMETIC_PUNCTUATION.sub(" ", text)
+
+    # Collapse whitespace and lowercase
+    tokens = cleaned.lower().split()
+    return " ".join(tokens)
 
 
 def compute_jaccard_similarity(str1: str, str2: str) -> float:
     """
-    Token-set Jaccard similarity.
+    Token-set Jaccard similarity preserving operator symbols.
     """
     tokens1 = set(normalize_text_for_search(str1).split())
     tokens2 = set(normalize_text_for_search(str2).split())
@@ -41,18 +59,48 @@ def compute_jaccard_similarity(str1: str, str2: str) -> float:
     return len(intersection) / len(union)
 
 
-def verify_source_quote(source_quote: str, raw_document: str) -> bool:
+def verify_source_quote_detailed(source_quote: str, raw_document: str) -> Tuple[bool, str]:
     """
-    Verifies that source_quote is a normalized substring of raw_document.
+    Verifies source_quote against raw_document with detailed match type.
+    Returns (is_valid, match_type):
+    - match_type: 'exact_excerpt', 'paraphrase', or 'unverified'
+    Guarantees opposite operators (e.g. '<' vs '>') are NEVER verified as equivalent.
     """
     if not source_quote or not raw_document:
-        return False
+        return False, "unverified"
+
     norm_quote = normalize_text_for_search(source_quote)
     norm_doc = normalize_text_for_search(raw_document)
-    # Require at least 3 matching words
-    if len(norm_quote.split()) < 3:
-        return norm_quote in norm_doc
-    return norm_quote in norm_doc
+
+    if not norm_quote:
+        return False, "unverified"
+
+    # Exact normalized excerpt
+    if norm_quote in norm_doc:
+        return True, "exact_excerpt"
+
+    # Operator check: if quote contains > and doc only contains < for that context, reject immediately
+    quote_has_greater = ">" in norm_quote and "<" not in norm_quote
+    quote_has_less = "<" in norm_quote and ">" not in norm_quote
+    if quote_has_greater and ">" not in norm_doc:
+        return False, "unverified"
+    if quote_has_less and "<" not in norm_doc:
+        return False, "unverified"
+
+    # Paraphrase check via high token overlap
+    jaccard = compute_jaccard_similarity(source_quote, raw_document)
+    if jaccard >= 0.70:
+        return False, "paraphrase"
+
+    return False, "unverified"
+
+
+def verify_source_quote(source_quote: str, raw_document: str) -> bool:
+    """
+    Boolean check verifying source_quote is an exact excerpt in raw_document.
+    """
+    is_valid, _ = verify_source_quote_detailed(source_quote, raw_document)
+    return is_valid
 
 
 def validate_test_case(test_case: Dict[str, Any], raw_document: str = "") -> List[Dict[str, Any]]:
@@ -65,15 +113,26 @@ def validate_test_case(test_case: Dict[str, Any], raw_document: str = "") -> Lis
     # 1. Source Quote Verification
     quote = test_case.get("source_quote", "")
     if quote and raw_document:
-        if not verify_source_quote(quote, raw_document):
-            if "Unverified Source" not in existing_types:
-                flags.append({
-                    "type": "Unverified Source",
-                    "severity": "High",
-                    "message": "Source quote could not be verified as an exact excerpt from the source document.",
-                    "suggested_question": "Can you provide the exact paragraph or requirement backing this test case?",
-                    "suggested_fix": "Update source quote to match verbatim text in the requirement document."
-                })
+        is_verified, match_type = verify_source_quote_detailed(quote, raw_document)
+        if not is_verified:
+            if match_type == "paraphrase":
+                if "Paraphrased Evidence" not in existing_types:
+                    flags.append({
+                        "type": "Paraphrased Evidence",
+                        "severity": "Medium",
+                        "message": "Source quote appears to be a paraphrase rather than a verbatim excerpt from the document.",
+                        "suggested_question": "Can you provide the verbatim sentence backing this test scenario?",
+                        "suggested_fix": "Update source quote to match verbatim text in the requirement document."
+                    })
+            else:
+                if "Unverified Source" not in existing_types:
+                    flags.append({
+                        "type": "Unverified Source",
+                        "severity": "High",
+                        "message": "Source quote could not be verified as an exact excerpt from the source document.",
+                        "suggested_question": "Which requirement paragraph supports this scenario?",
+                        "suggested_fix": "Provide a verbatim excerpt from the document."
+                    })
     elif not quote and raw_document:
         if "Unverified Source" not in existing_types:
             flags.append({
@@ -88,7 +147,6 @@ def validate_test_case(test_case: Dict[str, Any], raw_document: str = "") -> Lis
     scenario = test_case.get("scenario", "").strip()
     expected = test_case.get("expected_result", "").strip()
     steps = test_case.get("steps", [])
-    test_data = test_case.get("test_data", {})
 
     if not steps or len(steps) < 2 or not expected:
         if "Incomplete Case" not in existing_types:
@@ -100,7 +158,7 @@ def validate_test_case(test_case: Dict[str, Any], raw_document: str = "") -> Lis
                 "suggested_fix": "Provide at least 2 numbered steps and a verifiable expected outcome."
             })
 
-    # 3. Vague wording detector in Expected Result or Scenario
+    # 3. Vague wording detector
     combined_text = f"{scenario} {expected} {' '.join(steps)}".lower()
     for word, guidance in VAGUE_TERMS.items():
         if re.search(r'\b' + re.escape(word) + r'\b', combined_text):
@@ -140,11 +198,10 @@ def validate_test_suite(
 ) -> Dict[str, Any]:
     """
     Validates entire suite:
-    - Runs individual case validations
-    - Duplicate detection (Jaccard >= 0.8)
-    - Coverage gaps per requirement (missing Positive, Negative, or Boundary)
-    - Uncovered roles
-    - Computes Quality Score (0-100)
+    - Calculates requirement coverage across ALL requirements, including zero-test requirements
+    - Accurately checks Positive, Negative, and Boundary coverage
+    - Duplicates detection
+    - Quality score computation
     """
     total_cases = len(test_cases)
     flags_by_type: Dict[str, int] = {}
@@ -158,12 +215,10 @@ def validate_test_suite(
         st = tc.get("scenario_type") or "Positive"
         req_scenario_map.setdefault(req_id, set()).add(st)
 
-    # Check for duplicate cases via Jaccard
+    # Validate individual cases & check duplicates
     for i in range(len(test_cases)):
         case_a = test_cases[i]
         text_a = f"{case_a.get('scenario', '')} {' '.join(case_a.get('steps', []))}"
-        
-        # Validate individual case
         case_flags = validate_test_case(case_a, raw_document)
 
         for j in range(i + 1, len(test_cases)):
@@ -177,7 +232,7 @@ def validate_test_suite(
                     "severity": "Medium",
                     "message": dup_msg,
                     "suggested_question": f"Does {case_a.get('id')} test distinct functionality from {case_b.get('id')}?",
-                    "suggested_fix": "Refine steps or parameters to clearly differentiate the scenario, or merge."
+                    "suggested_fix": "Differentiate test data, preconditions, or user role."
                 })
 
         case_a["flags"] = case_flags
@@ -193,14 +248,26 @@ def validate_test_suite(
                 "suggested_question": f.get("suggested_question")
             })
 
-    # Coverage gap analysis
+    # Coverage gap analysis across ALL requirements
     for req in requirements:
         rid = req.get("id")
+        title = req.get("title", "")
+        req_text = req.get("text", "")
         types_covered = req_scenario_map.get(rid, set())
+
+        if not types_covered:
+            coverage_gaps.append(f"{rid} '{title}' has 0 test cases (Missing Coverage).")
+            continue
+
+        if "Positive" not in types_covered:
+            coverage_gaps.append(f"{rid} '{title}' has no Positive acceptance test.")
         if "Negative" not in types_covered:
-            coverage_gaps.append(f"{rid} '{req.get('title', '')}' has no Negative test case.")
-        if "Boundary" not in types_covered:
-            coverage_gaps.append(f"{rid} '{req.get('title', '')}' has no Boundary test case.")
+            coverage_gaps.append(f"{rid} '{title}' has no Negative test case.")
+
+        # Check if boundary is meaningfully applicable (e.g. contains numbers, limits, thresholds)
+        has_boundary_keywords = bool(re.search(r'\d+|limit|maximum|minimum|under|over|between|threshold', req_text, re.IGNORECASE))
+        if has_boundary_keywords and "Boundary" not in types_covered:
+            coverage_gaps.append(f"{rid} '{title}' has boundary thresholds but no Boundary test case.")
 
     # Quality score calculation (0 - 100)
     total_flags = sum(flags_by_type.values())

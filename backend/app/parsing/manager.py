@@ -3,6 +3,7 @@ from fastapi import UploadFile, HTTPException
 from backend.app.parsing.pdf_parser import parse_pdf
 from backend.app.parsing.docx_parser import parse_docx
 from backend.app.parsing.text_parser import parse_markdown_or_text
+from backend.app.parsing.json_parser import parse_and_validate_json_requirements
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -29,13 +30,15 @@ async def parse_uploaded_file(file: UploadFile) -> Dict[str, Any]:
             warnings.extend(pdf_warnings)
         elif ext in ["docx"]:
             parsed_text, headings, tables = parse_docx(content)
+        elif ext in ["json"]:
+            parsed_text, headings, tables = parse_and_validate_json_requirements(content)
         elif ext in ["txt", "md", "markdown"]:
             text_str = content.decode("utf-8", errors="replace")
             parsed_text, headings, tables = parse_markdown_or_text(text_str)
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file format '.{ext}'. Supported formats: PDF, DOCX, TXT, MD."
+                detail=f"Unsupported file format '.{ext}'. Supported formats: PDF, DOCX, TXT, MD, JSON."
             )
     except HTTPException:
         raise

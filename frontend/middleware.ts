@@ -15,11 +15,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for the session auth cookie
-  const authCookie = request.cookies.get("uatlens_auth");
+  // Check for the Supabase session auth token cookie
+  const supabaseToken = request.cookies.get("sb-access-token")?.value;
+  const legacyAuthCookie = request.cookies.get("uatlens_auth")?.value;
 
   // If not authenticated, redirect to /login
-  if (!authCookie || !authCookie.value) {
+  if (!supabaseToken && !legacyAuthCookie) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

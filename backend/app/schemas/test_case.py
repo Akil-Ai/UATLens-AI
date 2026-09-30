@@ -27,6 +27,10 @@ class TestCaseBase(BaseModel):
     source_quote: str = ""
     status: str = Field(default="Draft", description="Draft, Reviewed, Approved, Needs Clarification")
     is_stale: bool = False
+    permission_rule_ids: List[str] = Field(default_factory=list)
+    permission_rule_revision: Optional[int] = None
+    is_blocked: bool = False
+    blocked_reason: Optional[str] = None
     flags: List[FlagItem] = Field(default_factory=list)
 
 
@@ -41,6 +45,9 @@ class TestCaseUpdate(BaseModel):
     expected_result: Optional[str] = None
     status: Optional[str] = None
     is_stale: Optional[bool] = None
+    permission_rule_ids: Optional[List[str]] = None
+    is_blocked: Optional[bool] = None
+    blocked_reason: Optional[str] = None
 
 
 class TestCaseResponse(TestCaseBase):

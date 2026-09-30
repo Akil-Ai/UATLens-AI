@@ -194,7 +194,7 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.txt,.md,.markdown"
+              accept=".pdf,.docx,.txt,.md,.markdown,.json"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
@@ -210,7 +210,7 @@ export const Stage1Input: React.FC<Stage1InputProps> = ({
                 <span className="text-indigo-600 hover:underline">Click to upload</span> or drag and drop document
               </div>
               <p className="text-[11px] text-slate-400">
-                PDF, DOCX, Markdown, or TXT (Max 10 MB). Tables and headings are automatically preserved.
+                PDF, DOCX, Markdown, TXT, or JSON (Max 10 MB). Tables, headings, and structured JSON requirements are automatically preserved.
               </p>
             </div>
           </div>

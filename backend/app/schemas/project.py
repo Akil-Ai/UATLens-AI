@@ -20,6 +20,8 @@ class ProjectResponse(BaseModel):
     id: str
     name: str
     raw_text: str
+    owner_id: Optional[str] = None
+    current_suite_version: Optional[int] = 1
     parsed_structure: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
@@ -32,6 +34,7 @@ class ProjectSummary(BaseModel):
 
     id: str
     name: str
+    owner_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     test_case_count: int = 0

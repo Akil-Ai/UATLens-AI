@@ -34,6 +34,7 @@ interface Stage3GridProps {
   onCancelStream?: () => void;
   onProceedToDashboard: () => void;
   rawDocumentText: string;
+  onRegenerateTargeted?: (reqId: string) => void;
 }
 
 export const Stage3Grid: React.FC<Stage3GridProps> = ({
@@ -45,6 +46,7 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
   onCancelStream,
   onProceedToDashboard,
   rawDocumentText,
+  onRegenerateTargeted,
 }) => {
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,6 +54,8 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
   const [selectedType, setSelectedType] = useState<string>("All");
   const [selectedPriority, setSelectedPriority] = useState<string>("All");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
+  const [selectedRule, setSelectedRule] = useState<string>("All");
+  const [selectedIntegrity, setSelectedIntegrity] = useState<string>("All");
 
   // Selection states
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -78,6 +82,15 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
     return ["All", ...Array.from(roles)];
   }, [testCases]);
 
+  // Extract unique permission rules
+  const uniqueRules = useMemo(() => {
+    const rules = new Set<string>();
+    testCases.forEach((tc) => {
+      tc.permission_rule_ids?.forEach((r) => rules.add(r));
+    });
+    return ["All", ...Array.from(rules)];
+  }, [testCases]);
+
   // Filtered test cases
   const filteredCases = useMemo(() => {
     return testCases.filter((tc) => {
@@ -85,15 +98,18 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
       if (selectedType !== "All" && tc.scenario_type !== selectedType) return false;
       if (selectedPriority !== "All" && tc.priority !== selectedPriority) return false;
       if (selectedStatus !== "All" && tc.status !== selectedStatus) return false;
+      if (selectedRule !== "All" && (!tc.permission_rule_ids || !tc.permission_rule_ids.includes(selectedRule))) return false;
+      if (selectedIntegrity === "Stale" && !tc.is_stale) return false;
+      if (selectedIntegrity === "Blocked" && !tc.is_blocked) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const text = `${tc.id} ${tc.scenario} ${tc.expected_result} ${tc.role} ${tc.steps.join(" ")}`.toLowerCase();
+        const text = `${tc.id} ${tc.scenario} ${tc.expected_result} ${tc.role} ${tc.steps.join(" ")} ${(tc.permission_rule_ids || []).join(" ")}`.toLowerCase();
         if (!text.includes(q)) return false;
       }
       return true;
     });
-  }, [testCases, selectedRole, selectedType, selectedPriority, selectedStatus, searchQuery]);
+  }, [testCases, selectedRole, selectedType, selectedPriority, selectedStatus, selectedRule, selectedIntegrity, searchQuery]);
 
   // Total flags across suite
   const totalFlags = useMemo(() => {
@@ -292,7 +308,7 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
         </div>
 
         {/* Filter Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5 pt-1">
           {/* Search Box */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
@@ -363,6 +379,37 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
               <option value="Reviewed">Reviewed</option>
               <option value="Draft">Draft</option>
               <option value="Needs Clarification">Needs Clarification</option>
+            </select>
+          </div>
+
+          {/* Permission Rule Filter */}
+          <div>
+            <select
+              value={selectedRule}
+              onChange={(e) => setSelectedRule(e.target.value)}
+              className="w-full px-3 py-2 text-xs glass-input text-slate-800"
+            >
+              <option value="All">All Rules</option>
+              {uniqueRules
+                .filter((r) => r !== "All")
+                .map((r) => (
+                  <option key={r} value={r}>
+                    Rule: {r}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          {/* Integrity Filter (Stale / Blocked) */}
+          <div>
+            <select
+              value={selectedIntegrity}
+              onChange={(e) => setSelectedIntegrity(e.target.value)}
+              className="w-full px-3 py-2 text-xs glass-input text-slate-800"
+            >
+              <option value="All">All Integrity</option>
+              <option value="Stale">⚠️ Stale (Needs Review)</option>
+              <option value="Blocked">🚫 Blocked Only</option>
             </select>
           </div>
         </div>
@@ -477,6 +524,47 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
                               {tc.requirement_id}
                             </button>
                           )}
+
+                          {/* Permission Rule Badges */}
+                          {tc.permission_rule_ids && tc.permission_rule_ids.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {tc.permission_rule_ids.map((rId) => (
+                                <span
+                                  key={rId}
+                                  className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                  title={`Linked Permission Rule: ${rId}`}
+                                >
+                                  {rId}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Stale Badge */}
+                          {tc.is_stale && (
+                            <div className="mt-1">
+                              <span
+                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300"
+                                title="Clarification answer changed; test case requires review/regeneration"
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 text-amber-600 inline mr-0.5" />
+                                <span>Stale (Review Needed)</span>
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Blocked Badge */}
+                          {tc.is_blocked && (
+                            <div className="mt-1">
+                              <span
+                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-300"
+                                title={tc.blocked_reason || "Blocked by unresolved permission rule"}
+                              >
+                                <span>Blocked</span>
+                              </span>
+                            </div>
+                          )}
+
                           {hasFlags && (
                             <div className="flex flex-col gap-1 mt-1">
                               {tc.flags.map((f, i) => (
@@ -624,18 +712,37 @@ export const Stage3Grid: React.FC<Stage3GridProps> = ({
                         <select
                           value={tc.status}
                           onChange={(e) => handleQuickUpdate(tc.id, { status: e.target.value as TestCaseStatus })}
-                          className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-slate-200 bg-white"
+                          className={`text-[11px] font-semibold px-2 py-1 rounded-lg border bg-white ${
+                            tc.is_stale ? "border-amber-400 bg-amber-50/50" : "border-slate-200"
+                          }`}
                         >
                           <option value="Draft">Draft</option>
                           <option value="Reviewed">Reviewed</option>
                           <option value="Approved">Approved</option>
                           <option value="Needs Clarification">Needs Clarification</option>
                         </select>
+                        {tc.is_stale && (
+                          <span className="block text-[9px] text-amber-700 font-semibold mt-0.5">
+                            ⚠️ Approval requires re-review
+                          </span>
+                        )}
                       </td>
 
                       {/* Row Actions */}
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end space-x-1">
+                          {/* Targeted Requirement Regeneration */}
+                          {onRegenerateTargeted && tc.requirement_id && (
+                            <button
+                              disabled={isRegenerating}
+                              onClick={() => onRegenerateTargeted(tc.requirement_id!)}
+                              className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition-colors"
+                              title={`Targeted regeneration for ${tc.requirement_id}`}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
                           {/* Regenerate Expected Result */}
                           <button
                             disabled={isRegenerating}

@@ -5,6 +5,7 @@ import {
   FileSpreadsheet,
   FileText,
   FileCode,
+  FileCheck,
   Download,
   CheckCircle,
   Clock,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { TestCase } from "@/types";
+import { getAccessToken } from "@/lib/supabase";
 
 interface Stage5ExportProps {
   projectId: string;
@@ -43,6 +45,7 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
     csv: "text/csv",
     jira: "text/csv",
     json: "application/json",
+    zip: "application/zip",
   };
 
   const FILE_EXT: Record<string, string> = {
@@ -50,9 +53,10 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
     csv: "csv",
     jira: "csv",
     json: "json",
+    zip: "zip",
   };
 
-  const handleDownload = async (format: "xlsx" | "csv" | "jira" | "json") => {
+  const handleDownload = async (format: "xlsx" | "csv" | "jira" | "json" | "zip") => {
     if (!projectId) {
       setExportStatus({ type: "error", message: "No project selected. Please select a project before exporting." });
       return;
@@ -65,7 +69,13 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
       const statusParam = exportScope === "approved" ? "&status=Approved" : "";
       const downloadUrl = `/api/export/${projectId}?format=${format}${statusParam}`;
 
-      const response = await fetch(downloadUrl, { method: "GET" });
+      const token = getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(downloadUrl, { method: "GET", headers });
 
       if (!response.ok) {
         let detail = `Server returned ${response.status}`;
@@ -202,8 +212,8 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
           </div>
         </div>
 
-        {/* 4 Export Option Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+        {/* 5 Export Option Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
           {/* 1. Formatted Excel .XLSX */}
           <div className="p-6 rounded-2xl bg-white/90 border border-slate-200/80 shadow-xs hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4">
             <div className="space-y-2">
@@ -211,10 +221,10 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
                 <FileSpreadsheet className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-slate-900 text-sm">
-                Professional Excel (.xlsx) Workbook
+                5-Sheet Excel (.xlsx) Workbook
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                4 structured sheets: <strong>Test Cases</strong> (exact column order, frozen header, auto-filter, dropdown validation), <strong>Summary</strong> metrics, <strong>Clarifications</strong> queue, and <strong>Traceability</strong> matrix.
+                Complete enterprise workbook: <strong>Test Cases</strong>, <strong>Requirements</strong>, <strong>Permission Rules</strong>, <strong>Clarifications</strong>, and <strong>Coverage Summary</strong> with auto-filter and formula-injection security.
               </p>
             </div>
             <button
@@ -223,7 +233,7 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>{downloadingFormat === "xlsx" ? "Generating .xlsx..." : "Download Excel Workbook"}</span>
+              <span>{downloadingFormat === "xlsx" ? "Generating .xlsx..." : "Download 5-Sheet Excel"}</span>
             </button>
           </div>
 
@@ -234,10 +244,10 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
                 <FileText className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-slate-900 text-sm">
-                Standard Test Cases CSV
+                Traceable Test Cases CSV
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Lightweight comma-separated format matching exact required columns: ID, Scenario, Preconditions, Steps, Test Data, Expected Result, Type, Role, Priority.
+                Lightweight comma-separated format with added traceability fields: ID, Scenario, Type, Role, Priority, Linked Rules, Preconditions, Steps, Expected Result.
               </p>
             </div>
             <button
@@ -250,11 +260,34 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
             </button>
           </div>
 
-          {/* 3. Jira / TestRail Ready CSV */}
+          {/* 3. Multi-Table ZIP Bundle */}
+          <div className="p-6 rounded-2xl bg-white/90 border border-slate-200/80 shadow-xs hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4">
+            <div className="space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shadow-xs">
+                <Layers className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm">
+                Multi-Table CSV Bundle (.zip)
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Companion CSV archive containing separate relational tables: <strong>test_cases.csv</strong>, <strong>requirements.csv</strong>, <strong>clarifications.csv</strong>, and <strong>permission_rules.csv</strong>.
+              </p>
+            </div>
+            <button
+              disabled={downloadingFormat === "zip"}
+              onClick={() => handleDownload("zip")}
+              className="w-full py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-sm shadow-teal-600/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>{downloadingFormat === "zip" ? "Archiving ZIP..." : "Download CSV ZIP Bundle"}</span>
+            </button>
+          </div>
+
+          {/* 4. Jira / TestRail Ready CSV */}
           <div className="p-6 rounded-2xl bg-white/90 border border-slate-200/80 shadow-xs hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4">
             <div className="space-y-2">
               <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
-                <Layers className="w-6 h-6" />
+                <FileCheck className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-slate-900 text-sm">
                 Jira / TestRail Import CSV
@@ -273,17 +306,17 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
             </button>
           </div>
 
-          {/* 4. Structured JSON */}
-          <div className="p-6 rounded-2xl bg-white/90 border border-slate-200/80 shadow-xs hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4">
+          {/* 5. Structured JSON */}
+          <div className="p-6 rounded-2xl bg-white/90 border border-slate-200/80 shadow-xs hover:border-indigo-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4 md:col-span-2 lg:col-span-2">
             <div className="space-y-2">
               <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shadow-xs">
                 <FileCode className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-slate-900 text-sm">
-                Full Structured Suite (JSON)
+                Full Structured Suite (Versioned JSON)
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Complete schema-validated payload for CI/CD test automation pipelines, automated regression suites, or audit compliance repositories.
+                Documented versioned schema payload (v1.0.0) with complete structured arrays: test_cases, requirements, clarification_decisions, permission_rules, and coverage_summary for automated regression pipelines.
               </p>
             </div>
             <button

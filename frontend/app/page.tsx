@@ -17,6 +17,7 @@ import {
   updateContext,
   fetchTestCases,
 } from "@/lib/api";
+import { getAccessToken, supabase, setAuthCookies } from "@/lib/supabase";
 import { ProjectSummary, ExtractedContextData, TestCase } from "@/types";
 
 const EMPTY_CONTEXT: ExtractedContextData = {
@@ -57,21 +58,60 @@ export default function Home() {
 
   // ── Verify session authentication on mount ──
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const hasAuthCookie = document.cookie
-        .split("; ")
-        .some((c) => c.startsWith("uatlens_auth="));
-      const userSession = sessionStorage.getItem("uatlens_user");
+    async function checkAuth() {
+      if (typeof window === "undefined") return;
 
-      if (!hasAuthCookie || !userSession) {
-        setIsAuthenticated(false);
-        window.location.href = "/login";
-        return;
+      try {
+        const { data } = await supabase.auth.getSession();
+        const hasSbCookie = document.cookie
+          .split("; ")
+          .some((c) => c.startsWith("sb-access-token="));
+        const hasLegacyCookie = document.cookie
+          .split("; ")
+          .some((c) => c.startsWith("uatlens_auth="));
+
+        // If no active Supabase session and no auth cookies, redirect to login
+        if (!data?.session && !hasSbCookie && !hasLegacyCookie) {
+          setIsAuthenticated(false);
+          window.location.href = "/login";
+          return;
+        }
+
+        // Sync session cookies and user profile if available
+        if (data?.session) {
+          setAuthCookies(data.session.access_token, data.session.refresh_token);
+          if (!sessionStorage.getItem("uatlens_user")) {
+            sessionStorage.setItem(
+              "uatlens_user",
+              JSON.stringify({
+                id: data.session.user?.id,
+                email: data.session.user?.email,
+                name: data.session.user?.user_metadata?.name || data.session.user?.email?.split("@")[0] || "User",
+                role: data.session.user?.user_metadata?.role || "QA Lead",
+                loginTime: new Date().toISOString(),
+              })
+            );
+          }
+        }
+
+        setIsAuthenticated(true);
+        loadProjects();
+      } catch (err) {
+        console.error("Auth check error:", err);
+        const hasCookie =
+          document.cookie.includes("sb-access-token=") ||
+          document.cookie.includes("uatlens_auth=");
+        if (hasCookie) {
+          setIsAuthenticated(true);
+          loadProjects();
+        } else {
+          setIsAuthenticated(false);
+          window.location.href = "/login";
+        }
       }
-
-      setIsAuthenticated(true);
-      loadProjects();
     }
+
+    checkAuth();
   }, []);
 
   const loadProjects = async () => {
@@ -150,12 +190,18 @@ export default function Home() {
   }, [rawText, projectName, currentProject]);
 
   // ── Stage 2 → Stage 3: Generate Test Cases (SSE Streaming) ──
-  const handleGenerateTestCases = useCallback(async () => {
+  const handleGenerateTestCases = useCallback(async (targetReqId?: string) => {
     if (!currentProject?.id) return;
     setIsGenerating(true);
     setIsStreaming(true);
-    setTestCases([]);
-    setStreamProgress({ completed: 0, total: 0, message: "Starting generation..." });
+    if (!targetReqId) {
+      setTestCases([]);
+    }
+    setStreamProgress({
+      completed: 0,
+      total: 0,
+      message: targetReqId ? `Regenerating ${targetReqId}...` : "Starting generation...",
+    });
 
     // Save any context edits before generating
     try {
@@ -168,10 +214,21 @@ export default function Home() {
     abortRef.current = controller;
 
     try {
-      const response = await fetch(
-        `/api/generate-test-cases?project_id=${currentProject.id}`,
-        { method: "POST", signal: controller.signal }
-      );
+      const url = targetReqId
+        ? `/api/generate-test-cases?project_id=${currentProject.id}&target_requirement_id=${encodeURIComponent(targetReqId)}`
+        : `/api/generate-test-cases?project_id=${currentProject.id}`;
+
+      const token = getAccessToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
         throw new Error("Server returned an error starting generation.");
@@ -182,7 +239,7 @@ export default function Home() {
 
       const decoder = new TextDecoder();
       let buffer = "";
-      const accumulated: TestCase[] = [];
+      const accumulated: TestCase[] = targetReqId ? [...testCases.filter(t => t.requirement_id !== targetReqId)] : [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -216,7 +273,18 @@ export default function Home() {
         }
       }
 
-      setTestCases([...accumulated]);
+      // Reload fresh persisted suite to ensure atomic sync
+      try {
+        const fresh = await fetchTestCases(currentProject.id);
+        if (Array.isArray(fresh)) {
+          setTestCases(fresh);
+        } else {
+          setTestCases([...accumulated]);
+        }
+      } catch {
+        setTestCases([...accumulated]);
+      }
+
       setCurrentStep(3);
       setMaxReachedStep((prev) => Math.max(prev, 3) as StepNumber);
     } catch (err: any) {
@@ -229,7 +297,7 @@ export default function Home() {
       setIsStreaming(false);
       abortRef.current = null;
     }
-  }, [currentProject, contextData]);
+  }, [currentProject, contextData, testCases]);
 
   const handleCancelStream = useCallback(() => {
     abortRef.current?.abort();
@@ -328,12 +396,13 @@ export default function Home() {
                 setMaxReachedStep((prev) => Math.max(prev, 4) as StepNumber);
               }}
               rawDocumentText={rawText}
+              onRegenerateTargeted={(reqId) => handleGenerateTestCases(reqId)}
             />
           )}
 
           {/* ─── STAGE 4: Analytics Dashboard ─── */}
           {currentStep === 4 && (
-                      <Stage4Dashboard
+            <Stage4Dashboard
               testCases={testCases}
               onFilterGrid={handleFilterGrid}
               projectId={currentProject?.id}
@@ -342,6 +411,7 @@ export default function Home() {
                 setMaxReachedStep((prev) => Math.max(prev, 5) as StepNumber);
               }}
               onBackToGrid={() => goToStep(3)}
+              onNavigateToStage2={() => goToStep(2)}
             />
           )}
 

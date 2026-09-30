@@ -20,14 +20,22 @@ import {
   RefreshCw,
   Lock,
   Unlock,
+  RotateCcw,
+  Edit3,
+  HelpCircle,
+  FileText,
 } from "lucide-react";
 import { ExtractedContextData, ClarificationDecision, PermissionRule } from "@/types";
 import {
   syncClarificationDecisions,
-  updateClarificationDecision,
   fetchClarificationDecisions,
+  answerClarification,
+  confirmClarification,
+  dismissClarification,
+  reopenClarification,
   extractPermissionRules,
   fetchPermissionRules,
+  reviewPermissionRule,
 } from "@/lib/api";
 
 interface Stage2ContextProps {
@@ -55,10 +63,15 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
   const [clarifications, setClarifications] = useState<ClarificationDecision[]>([]);
   const [clarSyncing, setClarSyncing] = useState(false);
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [dismissalReason, setDismissalReason] = useState("");
 
   // ── Permission rule state ──
   const [permissionRules, setPermissionRules] = useState<PermissionRule[]>([]);
   const [permExtracting, setPermExtracting] = useState(false);
+  const [correctingRuleId, setCorrectingRuleId] = useState<string | null>(null);
+  const [correctionDecision, setCorrectionDecision] = useState<string>("Allowed");
+  const [correctionNotes, setCorrectionNotes] = useState<string>("");
 
   // Load existing clarifications & permissions on mount
   useEffect(() => {
@@ -85,15 +98,61 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
     }
   }, [projectId]);
 
-  // ── Update a single clarification decision ──
-  const handleDecision = useCallback(
-    async (decisionId: string, decision: "accepted" | "rejected" | "answered", answer?: string) => {
+  // ── Clarification Lifecycle Handlers ──
+  const handleAnswerSubmit = useCallback(
+    async (decisionId: string, answerText: string) => {
+      if (!projectId || !answerText.trim()) return;
+      try {
+        const updated = await answerClarification(projectId, decisionId, answerText.trim());
+        setClarifications((prev) => prev.map((d) => (d.id === decisionId ? updated : d)));
+        setAnswerDrafts((prev) => {
+          const next = { ...prev };
+          delete next[decisionId];
+          return next;
+        });
+      } catch (err) {
+        console.error("Answer clarification failed:", err);
+      }
+    },
+    [projectId]
+  );
+
+  const handleConfirmDecision = useCallback(
+    async (decisionId: string) => {
       if (!projectId) return;
       try {
-        const updated = await updateClarificationDecision(projectId, decisionId, decision, answer);
+        const updated = await confirmClarification(projectId, decisionId);
         setClarifications((prev) => prev.map((d) => (d.id === decisionId ? updated : d)));
       } catch (err) {
-        console.error("Update decision failed:", err);
+        console.error("Confirm clarification failed:", err);
+      }
+    },
+    [projectId]
+  );
+
+  const handleDismissSubmit = useCallback(
+    async (decisionId: string) => {
+      if (!projectId || !dismissalReason.trim()) return;
+      try {
+        const updated = await dismissClarification(projectId, decisionId, dismissalReason.trim());
+        setClarifications((prev) => prev.map((d) => (d.id === decisionId ? updated : d)));
+        setDismissingId(null);
+        setDismissalReason("");
+      } catch (err) {
+        console.error("Dismiss clarification failed:", err);
+      }
+    },
+    [projectId, dismissalReason]
+  );
+
+  const handleReopenDecision = useCallback(
+    async (decisionId: string) => {
+      if (!projectId) return;
+      try {
+        const updated = await reopenClarification(projectId, decisionId);
+        setClarifications((prev) => prev.map((d) => (d.id === decisionId ? updated : d)));
+      } catch (err) {
+        console.error("Reopen clarification failed:", err);
       }
     },
     [projectId]
@@ -112,6 +171,26 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
       setPermExtracting(false);
     }
   }, [projectId]);
+
+  // ── Review permission rule ──
+  const handleReviewRule = useCallback(
+    async (ruleId: string, reviewStatus: string, decision: string, notes?: string) => {
+      if (!projectId) return;
+      try {
+        const updated = await reviewPermissionRule(projectId, ruleId, {
+          review_status: reviewStatus,
+          decision,
+          reviewer_notes: notes,
+        });
+        setPermissionRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)));
+        setCorrectingRuleId(null);
+        setCorrectionNotes("");
+      } catch (err) {
+        console.error("Review permission rule failed:", err);
+      }
+    },
+    [projectId]
+  );
 
   // Tab definitions
   const tabs = [
@@ -163,22 +242,23 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
   };
 
   // Decision badge helper
-  const decisionBadge = (decision: string) => {
-    switch (decision) {
-      case "accepted":
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Accepted</span>;
-      case "rejected":
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">Rejected</span>;
-      case "answered":
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">Answered</span>;
+  const decisionBadge = (decision: string, status?: string) => {
+    const s = status || (decision === "answered" ? "Answered" : decision === "accepted" ? "Resolved" : decision === "rejected" ? "Dismissed" : "Open");
+    switch (s) {
+      case "Resolved":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Resolved</span>;
+      case "Dismissed":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Dismissed</span>;
+      case "Answered":
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">Answered</span>;
       default:
-        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Pending</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Open</span>;
     }
   };
 
-  const allowRules = permissionRules.filter((r) => r.decision === "allow");
-  const denyRules = permissionRules.filter((r) => r.decision === "deny");
-  const pendingClarifications = clarifications.filter((c) => c.decision === "pending").length;
+  const allowRules = permissionRules.filter((r) => r.decision === "Allowed" || r.decision === "allow");
+  const denyRules = permissionRules.filter((r) => r.decision === "Denied" || r.decision === "deny");
+  const unresolvedClarifications = clarifications.filter((c) => c.status !== "Resolved" && c.decision !== "accepted" && c.status !== "Dismissed" && c.decision !== "rejected").length;
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
@@ -222,7 +302,7 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
-            const showAlert = tab.key === "ambiguities" && pendingClarifications > 0;
+            const showAlert = tab.key === "ambiguities" && unresolvedClarifications > 0;
             return (
               <button
                 key={tab.key}
@@ -295,16 +375,16 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
                 </div>
               </div>
 
-              {/* Permission Analysis Matrix */}
-              <div className="mt-4 p-5 rounded-2xl bg-white/80 border border-slate-200/80 space-y-3">
+              {/* Permission Analysis Matrix & Review */}
+              <div className="mt-4 p-5 rounded-2xl bg-white/80 border border-slate-200/80 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <ShieldCheck className="w-4 h-4 text-indigo-600" />
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                      Permission Analysis Matrix
+                      Permission Analysis & Governance Rules
                     </h4>
                     <span className="text-[10px] text-slate-400">
-                      ({allowRules.length} allow · {denyRules.length} deny)
+                      ({allowRules.length} allow · {denyRules.length} deny · {permissionRules.length} total)
                     </span>
                   </div>
                   <button
@@ -313,54 +393,173 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
                     className="flex items-center space-x-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${permExtracting ? "animate-spin" : ""}`} />
-                    <span>{permExtracting ? "Extracting..." : "Extract Permissions"}</span>
+                    <span>{permExtracting ? "Analyzing..." : "Extract Permissions"}</span>
                   </button>
                 </div>
 
                 {permissionRules.length === 0 ? (
                   <div className="text-xs text-slate-400 italic text-center py-4">
-                    Click "Extract Permissions" to derive role/action permission rules from the context.
+                    Click "Extract Permissions" to derive role/action permission rules with source evidence.
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {/* Group by role */}
-                    {Array.from(new Set(permissionRules.map((r) => r.role))).map((role) => {
-                      const roleRules = permissionRules.filter((r) => r.role === role);
-                      const allows = roleRules.filter((r) => r.decision === "allow");
-                      const denies = roleRules.filter((r) => r.decision === "deny");
+                  <div className="space-y-3">
+                    {permissionRules.map((rule) => {
+                      const isAllowed = rule.decision === "Allowed" || rule.decision === "allow";
+                      const isDenied = rule.decision === "Denied" || rule.decision === "deny";
+                      const isConflicting = rule.decision === "Conflicting";
+                      const isCorrecting = correctingRuleId === rule.id;
+
                       return (
-                        <div key={role} className="p-3 rounded-xl bg-slate-50/90 border border-slate-200/60 space-y-2">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-6 h-6 rounded-md bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-[10px]">
-                              {role.charAt(0)}
+                        <div
+                          key={rule.id}
+                          className={`p-4 rounded-xl border transition-all space-y-2.5 ${
+                            isDenied
+                              ? "bg-rose-50/30 border-rose-200/70"
+                              : isAllowed
+                              ? "bg-emerald-50/30 border-emerald-200/70"
+                              : isConflicting
+                              ? "bg-amber-50/30 border-amber-200/70"
+                              : "bg-slate-50 border-slate-200"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center space-x-2">
+                              <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                                {rule.id}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-500">
+                                Rev {rule.revision || 1}
+                              </span>
+                              {rule.source_requirement_id && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600">
+                                  {rule.source_requirement_id}
+                                </span>
+                              )}
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center space-x-1 ${
+                                  isAllowed
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : isDenied
+                                    ? "bg-rose-100 text-rose-800"
+                                    : isConflicting
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-slate-200 text-slate-700"
+                                }`}
+                              >
+                                {isAllowed ? <Unlock className="w-2.5 h-2.5 inline mr-1" /> : <Lock className="w-2.5 h-2.5 inline mr-1" />}
+                                <span>{rule.decision}</span>
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                  rule.review_status === "Confirmed"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : rule.review_status === "Corrected"
+                                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {rule.review_status || "Draft"}
+                              </span>
                             </div>
-                            <span className="text-xs font-bold text-slate-800">{role}</span>
-                            <span className="text-[10px] text-slate-400">
-                              {allows.length} allowed · {denies.length} denied
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {allows.map((r) => (
-                              <span
-                                key={r.id}
-                                className="flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[10px] font-medium border border-emerald-200"
-                                title={r.condition || ""}
+
+                            {/* Action buttons */}
+                            <div className="flex items-center space-x-2">
+                              {rule.review_status !== "Confirmed" && (
+                                <button
+                                  onClick={() => handleReviewRule(rule.id, "Confirmed", rule.decision)}
+                                  className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 transition-colors shadow-xs"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Confirm</span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  if (isCorrecting) {
+                                    setCorrectingRuleId(null);
+                                  } else {
+                                    setCorrectingRuleId(rule.id);
+                                    setCorrectionDecision(rule.decision);
+                                    setCorrectionNotes(rule.reviewer_notes || "");
+                                  }
+                                }}
+                                className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 text-[11px] font-medium hover:text-indigo-600 transition-colors"
                               >
-                                <Unlock className="w-2.5 h-2.5" />
-                                <span>{r.action}</span>
-                              </span>
-                            ))}
-                            {denies.map((r) => (
-                              <span
-                                key={r.id}
-                                className="flex items-center space-x-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 text-[10px] font-medium border border-rose-200"
-                                title={r.condition || ""}
-                              >
-                                <Lock className="w-2.5 h-2.5" />
-                                <span>{r.action.replace("(restricted) ", "").slice(0, 60)}</span>
-                              </span>
-                            ))}
+                                <Edit3 className="w-3 h-3" />
+                                <span>{isCorrecting ? "Cancel" : "Correct"}</span>
+                              </button>
+                            </div>
                           </div>
+
+                          {/* Rule Content */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="font-bold text-slate-800">{rule.role}</span>
+                              <span className="text-slate-500"> → </span>
+                              <span className="font-semibold text-slate-900">{rule.action}</span>
+                              {rule.resource && <span className="text-slate-500"> on <code className="bg-slate-100 px-1 py-0.5 rounded text-[11px]">{rule.resource}</code></span>}
+                            </div>
+                            <div className="text-slate-600 text-[11px] flex flex-wrap gap-2">
+                              {rule.scope && <span>Scope: <strong className="text-slate-700">{rule.scope}</strong></span>}
+                              {rule.condition && <span>Condition: <strong className="text-slate-700">{rule.condition}</strong></span>}
+                              {rule.workflow_state && <span>State: <strong className="text-slate-700">{rule.workflow_state}</strong></span>}
+                            </div>
+                          </div>
+
+                          {/* Source quote */}
+                          {rule.source_quote && (
+                            <div className="p-2 rounded-lg bg-white/70 border border-slate-200/60 text-[11px] text-slate-600 italic">
+                              &ldquo;{rule.source_quote}&rdquo;
+                              {rule.source_location && <span className="not-italic text-[10px] text-slate-400 ml-2">({rule.source_location})</span>}
+                            </div>
+                          )}
+
+                          {/* Reviewer correction form */}
+                          {isCorrecting && (
+                            <div className="p-3 rounded-xl bg-white border border-indigo-200 space-y-2 text-xs">
+                              <p className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                                Correct Extracted Permission Rule
+                              </p>
+                              <div className="flex items-center space-x-2">
+                                <label className="text-slate-500 text-[11px]">Decision:</label>
+                                {["Allowed", "Denied", "Unspecified", "Conflicting"].map((dec) => (
+                                  <button
+                                    key={dec}
+                                    type="button"
+                                    onClick={() => setCorrectionDecision(dec)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                      correctionDecision === dec
+                                        ? "bg-indigo-600 text-white border-indigo-600"
+                                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                    }`}
+                                  >
+                                    {dec}
+                                  </button>
+                                ))}
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Reviewer notes / rationale for correction (optional)..."
+                                value={correctionNotes}
+                                onChange={(e) => setCorrectionNotes(e.target.value)}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                              <div className="flex items-center space-x-2 pt-1">
+                                <button
+                                  onClick={() => handleReviewRule(rule.id, "Corrected", correctionDecision, correctionNotes)}
+                                  className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
+                                >
+                                  Save Correction
+                                </button>
+                                <button
+                                  onClick={() => setCorrectingRuleId(null)}
+                                  className="px-3 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -494,17 +693,17 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
             </div>
           )}
 
-          {/* 7. CLARIFICATIONS TAB (enhanced from Ambiguities) */}
+          {/* 7. CLARIFICATIONS TAB (Durable 4-Stage Lifecycle: Open -> Answered -> Resolved, Dismissed) */}
           {activeTab === "ambiguities" && (
             <div className="space-y-4">
               {/* Header banner */}
               <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <p className="font-semibold">Requirement Clarification Workflow</p>
+                  <p className="font-semibold">Durable Requirement Clarification Workflow</p>
                   <p>
-                    Review detected ambiguities. Accept, reject, or provide a BA answer for each item.
-                    Answered clarifications will be passed to the AI during test generation to produce more accurate tests.
+                    Lifecycle: <strong>Open</strong> → <strong>Answered</strong> → <strong>Resolved</strong> (authoritative reviewer confirmation).
+                    Items can be <strong>Dismissed</strong> with a mandatory audit reason. Confirmed answers feed directly into generation.
                   </p>
                 </div>
               </div>
@@ -513,7 +712,7 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500">
                   {clarifications.length > 0
-                    ? `${clarifications.filter(c => c.decision !== "pending").length} of ${clarifications.length} resolved`
+                    ? `${clarifications.filter(c => c.status === "Resolved" || c.decision === "accepted").length} resolved · ${clarifications.filter(c => c.status === "Answered").length} answered · ${clarifications.filter(c => c.status === "Dismissed" || c.decision === "rejected").length} dismissed`
                     : "No decisions synced yet"}
                 </span>
                 <button
@@ -555,135 +754,229 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
                 </div>
               ))}
 
-              {/* Synced clarification decisions with decision controls */}
-              {clarifications.map((clar) => (
-                <div
-                  key={clar.id}
-                  className={`p-4 rounded-2xl border shadow-xs space-y-3 ${
-                    clar.decision === "answered"
-                      ? "bg-indigo-50/40 border-indigo-200/80"
-                      : clar.decision === "accepted"
-                      ? "bg-emerald-50/40 border-emerald-200/80"
-                      : clar.decision === "rejected"
-                      ? "bg-slate-50/60 border-slate-200"
-                      : "bg-amber-50/40 border-amber-200/80"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 flex-wrap gap-1">
-                      <span className="px-2 py-0.5 rounded-md bg-amber-100 font-mono text-[11px] font-bold text-amber-900">
-                        {clar.requirement_id || "GENERAL"}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/70 text-amber-800">
-                        {clar.issue_type}
-                      </span>
-                      {decisionBadge(clar.decision)}
+              {/* Synced clarification decisions with durable lifecycle controls */}
+              {clarifications.map((clar) => {
+                const currentStatus = clar.status || (clar.decision === "answered" ? "Answered" : clar.decision === "accepted" ? "Resolved" : clar.decision === "rejected" ? "Dismissed" : "Open");
+                const isAnswering = clar.id in answerDrafts;
+                const isDismissing = dismissingId === clar.id;
+
+                return (
+                  <div
+                    key={clar.id}
+                    className={`p-4 rounded-2xl border shadow-xs space-y-3 transition-all ${
+                      currentStatus === "Resolved"
+                        ? "bg-emerald-50/40 border-emerald-200/80"
+                        : currentStatus === "Answered"
+                        ? "bg-indigo-50/40 border-indigo-200/80"
+                        : currentStatus === "Dismissed"
+                        ? "bg-slate-50/70 border-slate-200"
+                        : "bg-amber-50/40 border-amber-200/80"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 flex-wrap gap-1">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 font-mono text-[11px] font-bold text-amber-900">
+                          {clar.requirement_id || "GENERAL"}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/70 text-amber-800">
+                          {clar.issue_type}
+                        </span>
+                        {decisionBadge(clar.decision, clar.status)}
+                      </div>
                     </div>
-                  </div>
 
-                  <p className="text-xs font-medium text-slate-800">{clar.description}</p>
+                    <p className="text-xs font-medium text-slate-800">{clar.description}</p>
 
-                  <div className="p-3 rounded-xl bg-white/90 border border-amber-100 text-xs">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                      Suggested BA Question:
-                    </span>
-                    <p className="font-semibold text-slate-800 mt-0.5">&ldquo;{clar.suggested_question}&rdquo;</p>
-                  </div>
-
-                  {/* Decision actions */}
-                  {clar.decision === "pending" && (
-                    <div className="flex items-center space-x-2 pt-1">
-                      <button
-                        onClick={() => handleDecision(clar.id, "accepted")}
-                        className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-semibold hover:bg-emerald-200 transition-colors"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Accept As-Is</span>
-                      </button>
-                      <button
-                        onClick={() => handleDecision(clar.id, "rejected")}
-                        className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition-colors"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>Not Applicable</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAnswerDrafts((prev) => ({ ...prev, [clar.id]: "" }));
-                        }}
-                        className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-800 text-xs font-semibold hover:bg-indigo-200 transition-colors"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Provide Answer</span>
-                      </button>
+                    <div className="p-3 rounded-xl bg-white/90 border border-amber-100 text-xs">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                        Suggested BA Question:
+                      </span>
+                      <p className="font-semibold text-slate-800 mt-0.5">&ldquo;{clar.suggested_question}&rdquo;</p>
                     </div>
-                  )}
 
-                  {/* Answer input */}
-                  {(clar.id in answerDrafts || clar.decision === "answered") && (
-                    <div className="space-y-2">
-                      <textarea
-                        rows={2}
-                        value={answerDrafts[clar.id] ?? clar.reviewer_answer ?? ""}
-                        onChange={(e) =>
-                          setAnswerDrafts((prev) => ({ ...prev, [clar.id]: e.target.value }))
-                        }
-                        placeholder="Type your clarification answer here..."
-                        className="w-full px-3 py-2 rounded-xl text-xs border border-indigo-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-                      />
-                      <div className="flex items-center space-x-2">
+                    {/* Source Evidence & Location */}
+                    {clar.source_evidence && (
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 text-[11px] text-slate-600 italic">
+                        <span className="font-semibold not-italic text-slate-700">Source Evidence: </span>
+                        &ldquo;{clar.source_evidence}&rdquo;
+                        {clar.document_location && <span className="not-italic text-[10px] text-slate-400 ml-2">({clar.document_location})</span>}
+                      </div>
+                    )}
+
+                    {/* Display Recorded BA Answer */}
+                    {clar.reviewer_answer && (
+                      <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                            Authoritative Answer:
+                          </span>
+                          {clar.answered_at && (
+                            <span className="text-[10px] text-slate-400">
+                              By {clar.answered_by || "Reviewer"} on {new Date(clar.answered_at).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-800 font-medium">{clar.reviewer_answer}</p>
+                      </div>
+                    )}
+
+                    {/* Display Dismissal Reason if Dismissed */}
+                    {currentStatus === "Dismissed" && clar.dismissal_reason && (
+                      <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs space-y-0.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                          Dismissal Reason:
+                        </span>
+                        <p className="text-slate-700 italic">{clar.dismissal_reason}</p>
+                      </div>
+                    )}
+
+                    {/* Lifecycle Actions */}
+                    <div className="flex items-center space-x-2 pt-1 flex-wrap gap-2">
+                      {/* State: Open */}
+                      {currentStatus === "Open" && (
+                        <>
+                          <button
+                            onClick={() => setAnswerDrafts((prev) => ({ ...prev, [clar.id]: clar.reviewer_answer || "" }))}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-xs"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Provide Answer</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDismissingId(clar.id);
+                              setDismissalReason("");
+                            }}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition-colors"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Dismiss with Reason</span>
+                          </button>
+                        </>
+                      )}
+
+                      {/* State: Answered */}
+                      {currentStatus === "Answered" && (
+                        <>
+                          <button
+                            onClick={() => handleConfirmDecision(clar.id)}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors shadow-xs"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Confirm & Resolve</span>
+                          </button>
+                          <button
+                            onClick={() => setAnswerDrafts((prev) => ({ ...prev, [clar.id]: clar.reviewer_answer || "" }))}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold hover:bg-indigo-100 transition-colors"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edit Answer</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDismissingId(clar.id);
+                              setDismissalReason("");
+                            }}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition-colors"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Dismiss</span>
+                          </button>
+                        </>
+                      )}
+
+                      {/* State: Resolved or Dismissed */}
+                      {(currentStatus === "Resolved" || currentStatus === "Dismissed") && (
                         <button
-                          onClick={() => {
-                            const answer = answerDrafts[clar.id] ?? "";
-                            if (answer.trim()) {
-                              handleDecision(clar.id, "answered", answer);
+                          onClick={() => handleReopenDecision(clar.id)}
+                          className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-semibold hover:text-indigo-600 transition-colors"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reopen Finding</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Answer input form */}
+                    {isAnswering && (
+                      <div className="space-y-2 pt-2 border-t border-slate-200/60">
+                        <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                          Authoritative Clarification Answer (Required)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={answerDrafts[clar.id] ?? ""}
+                          onChange={(e) =>
+                            setAnswerDrafts((prev) => ({ ...prev, [clar.id]: e.target.value }))
+                          }
+                          placeholder="Provide the confirmed business requirement answer..."
+                          className="w-full px-3 py-2 rounded-xl text-xs border border-indigo-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                        />
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              const answer = answerDrafts[clar.id] ?? "";
+                              if (answer.trim()) {
+                                handleAnswerSubmit(clar.id, answer);
+                              }
+                            }}
+                            disabled={!answerDrafts[clar.id]?.trim()}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-xs"
+                          >
+                            Submit Answer
+                          </button>
+                          <button
+                            onClick={() =>
                               setAnswerDrafts((prev) => {
                                 const next = { ...prev };
                                 delete next[clar.id];
                                 return next;
-                              });
+                              })
                             }
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
-                        >
-                          Save Answer
-                        </button>
-                        <button
-                          onClick={() =>
-                            setAnswerDrafts((prev) => {
-                              const next = { ...prev };
-                              delete next[clar.id];
-                              return next;
-                            })
-                          }
-                          className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
-                        >
-                          Cancel
-                        </button>
+                            className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Show saved answer */}
-                  {clar.decision === "answered" && clar.reviewer_answer && !(clar.id in answerDrafts) && (
-                    <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">BA Answer:</span>
-                      <p className="text-slate-800 mt-0.5 font-medium">{clar.reviewer_answer}</p>
-                      <button
-                        onClick={() =>
-                          setAnswerDrafts((prev) => ({
-                            ...prev,
-                            [clar.id]: clar.reviewer_answer || "",
-                          }))
-                        }
-                        className="text-indigo-600 text-[10px] font-semibold hover:underline mt-1"
-                      >
-                        Edit answer
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    {/* Dismissal Reason Form */}
+                    {isDismissing && (
+                      <div className="space-y-2 pt-2 border-t border-slate-200/60 bg-slate-50 p-3 rounded-xl">
+                        <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                          Reason for Dismissal (Required)
+                        </label>
+                        <input
+                          type="text"
+                          value={dismissalReason}
+                          onChange={(e) => setDismissalReason(e.target.value)}
+                          placeholder="e.g., Covered by general system policy or out of scope..."
+                          className="w-full px-3 py-1.5 rounded-lg text-xs border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        />
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => handleDismissSubmit(clar.id)}
+                            disabled={!dismissalReason.trim()}
+                            className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-50 transition-colors shadow-xs"
+                          >
+                            Confirm Dismissal
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDismissingId(null);
+                              setDismissalReason("");
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -693,9 +986,9 @@ export const Stage2Context: React.FC<Stage2ContextProps> = ({
           <div className="text-xs text-slate-500 space-y-0.5">
             <p>{contextData.business_rules.length} rules and {contextData.roles.length} roles verified.</p>
             {clarifications.length > 0 && (
-              <p className={pendingClarifications > 0 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
-                {pendingClarifications > 0
-                  ? `${pendingClarifications} clarification(s) still pending — answers will improve test quality.`
+              <p className={unresolvedClarifications > 0 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
+                {unresolvedClarifications > 0
+                  ? `${unresolvedClarifications} clarification(s) still open or awaiting confirmation — answers improve test accuracy.`
                   : "All clarifications resolved ✓"}
               </p>
             )}

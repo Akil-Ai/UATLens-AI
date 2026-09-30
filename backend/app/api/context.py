@@ -8,15 +8,23 @@ from backend.app.schemas.context import (
     UpdateContextRequest
 )
 from backend.app.ai.llm_client import llm_client
+from backend.app.core.auth import AuthUser, get_current_user
+from backend.app.core.project_access import (
+    get_project_viewer,
+    get_project_editor,
+    check_project_access,
+)
 
 router = APIRouter(tags=["Context"])
 
 
 @router.post("/extract-context", response_model=ExtractedContextData)
-async def extract_context(payload: ExtractContextRequest, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == payload.project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+async def extract_context(
+    payload: ExtractContextRequest,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    project = check_project_access(payload.project_id, current_user, db, required_role="editor")
 
     doc_text = payload.text if payload.text else project.raw_text
     if not doc_text or not doc_text.strip():
@@ -60,12 +68,15 @@ async def extract_context(payload: ExtractContextRequest, db: Session = Depends(
 
 
 @router.get("/context/{project_id}", response_model=ExtractedContextData)
-def get_extracted_context(project_id: str, db: Session = Depends(get_db)):
-    ctx = db.query(ExtractedContext).filter(ExtractedContext.project_id == project_id).first()
+def get_extracted_context(
+    project: Project = Depends(get_project_viewer),
+    db: Session = Depends(get_db)
+):
+    ctx = db.query(ExtractedContext).filter(ExtractedContext.project_id == project.id).first()
     if not ctx:
         raise HTTPException(status_code=404, detail="Context not yet extracted for this project.")
 
-    reqs = db.query(Requirement).filter(Requirement.project_id == project_id).all()
+    reqs = db.query(Requirement).filter(Requirement.project_id == project.id).all()
     req_items = [
         {
             "id": r.id,
@@ -91,7 +102,12 @@ def get_extracted_context(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/context/{project_id}", response_model=ExtractedContextData)
-def update_context(project_id: str, payload: UpdateContextRequest, db: Session = Depends(get_db)):
+def update_context(
+    payload: UpdateContextRequest,
+    project: Project = Depends(get_project_editor),
+    db: Session = Depends(get_db)
+):
+    project_id = project.id
     ctx = db.query(ExtractedContext).filter(ExtractedContext.project_id == project_id).first()
     if not ctx:
         ctx = ExtractedContext(project_id=project_id)

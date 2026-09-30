@@ -73,6 +73,13 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     
+    # Supabase Auth Configuration
+    SUPABASE_URL: str = "https://ydsllsrijanrwxvcoosx.supabase.co"
+    SUPABASE_ANON_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlkc2xsc3JpamFucnd4dmNvb3N4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3MDczMTEsImV4cCI6MjEwNjI4MzMxMX0.15YjwaC0p8UtjuHaPQbhZPImiQQungtZSQZ84Yrg9nw"
+    SUPABASE_PROJECT_REF: str = "ydsllsrijanrwxvcoosx"
+    SUPABASE_JWT_SECRET: str = ""
+    AUTH_DISABLED: bool = False
+
     LLM_PROVIDER: str = "anthropic"  # "anthropic", "gemini", or "mock"
     LLM_MODEL: str = "claude-3-5-sonnet-20241022"
     ANTHROPIC_API_KEY: str = ""

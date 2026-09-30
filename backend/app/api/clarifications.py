@@ -1,107 +1,147 @@
 """
-API endpoints for the Requirement Clarification Workflow.
+API endpoints for the Durable Requirement Clarification Workflow.
 
-GET  /api/clarifications/{project_id}   — list all decisions for project
-POST /api/clarifications/{project_id}/sync — sync ambiguities from context → decisions
-PATCH /api/clarifications/{project_id}/{decision_id} — update a single decision
-DELETE /api/clarifications/{project_id} — clear all decisions (on re-extraction)
+Lifecycle:
+  Open → Answered → Resolved
+  Or Dismissed (requires mandatory reason)
+  Reopen returns to Open with audit history
+
+Downstream impact:
+  Answering or resolving a clarification marks affected test cases stale.
+  Selective regeneration restores only affected tests.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import List, Optional
-from pydantic import BaseModel
-import uuid
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.db.session import get_db
-from backend.app.models.entities import Project, ExtractedContext, ClarificationDecision
+from backend.app.models.entities import Project, ExtractedContext, ClarificationDecision, TestCase, Flag
+from backend.app.core.auth import AuthUser, get_current_user
+from backend.app.core.project_access import get_project_viewer, get_project_editor
 
 router = APIRouter(tags=["Clarifications"])
 
 
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class ClarificationDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     project_id: str
     requirement_id: Optional[str] = None
     issue_type: str
     description: str
     suggested_question: str
-    decision: str          # pending | accepted | rejected | answered
+    source_evidence: Optional[str] = None
+    document_location: Optional[str] = None
+    status: str                        # Open | Answered | Resolved | Dismissed
+    decision: str                      # legacy compatibility: pending | answered | accepted | rejected
     reviewer_answer: Optional[str] = None
+    dismissal_reason: Optional[str] = None
+    answered_by: Optional[str] = None
+    answered_at: Optional[datetime] = None
+    confirmed_by: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
+    dismissed_by: Optional[str] = None
+    dismissed_at: Optional[datetime] = None
+    reopened_by: Optional[str] = None
+    reopened_at: Optional[datetime] = None
+    history: Optional[List[Dict[str, Any]]] = None
+    is_superseded: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+
+class AnswerPayload(BaseModel):
+    answer: str = Field(..., min_length=1, description="Authoritative answer to clarification question")
+
+
+class DismissPayload(BaseModel):
+    reason: str = Field(..., min_length=1, description="Mandatory reason for dismissing finding")
 
 
 class UpdateDecisionPayload(BaseModel):
-    decision: str          # accepted | rejected | answered
+    status: Optional[str] = None       # Open | Answered | Resolved | Dismissed
+    decision: Optional[str] = None     # legacy
     reviewer_answer: Optional[str] = None
+    dismissal_reason: Optional[str] = None
+
+
+# ── Helper to invalidate affected test cases ──────────────────────────────────
+
+def _mark_affected_tests_stale(project_id: str, requirement_id: Optional[str], db: Session) -> int:
+    """Marks tests associated with the clarified requirement as stale."""
+    if not requirement_id:
+        return 0
+    cases = (
+        db.query(TestCase)
+        .filter(TestCase.project_id == project_id, TestCase.requirement_id == requirement_id)
+        .all()
+    )
+    count = 0
+    for tc in cases:
+        tc.is_stale = True
+        count += 1
+    return count
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/clarifications/{project_id}", response_model=List[ClarificationDecisionResponse])
-def list_clarification_decisions(project_id: str, db: Session = Depends(get_db)):
+def list_clarification_decisions(
+    include_superseded: bool = False,
+    project: Project = Depends(get_project_viewer),
+    db: Session = Depends(get_db)
+):
     """Return all persisted clarification decisions for a project."""
-    decisions = (
-        db.query(ClarificationDecision)
-        .filter(ClarificationDecision.project_id == project_id)
-        .order_by(ClarificationDecision.created_at.asc())
-        .all()
-    )
+    query = db.query(ClarificationDecision).filter(ClarificationDecision.project_id == project.id)
+    if not include_superseded:
+        query = query.filter(ClarificationDecision.is_superseded == False)
+    decisions = query.order_by(ClarificationDecision.created_at.asc()).all()
     return decisions
 
 
 @router.post("/clarifications/{project_id}/sync", response_model=List[ClarificationDecisionResponse])
-def sync_clarification_decisions(project_id: str, db: Session = Depends(get_db)):
+def sync_clarification_decisions(
+    project: Project = Depends(get_project_editor),
+    db: Session = Depends(get_db)
+):
     """
-    Synchronise ClarificationDecision rows with the ambiguities stored in
-    ExtractedContext.  New ambiguities become 'pending' rows; existing rows
-    with a user decision are preserved.  Removed ambiguities are deleted.
+    Synchronises ambiguities with ClarificationDecision rows idempotently.
+    Never deletes existing decisions. If a finding is absent, marks is_superseded=True.
     """
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
-
+    project_id = project.id
     ctx = db.query(ExtractedContext).filter(ExtractedContext.project_id == project_id).first()
-    if not ctx or not ctx.ambiguities:
-        # No context or no ambiguities → clear decisions
-        db.query(ClarificationDecision).filter(
-            ClarificationDecision.project_id == project_id
-        ).delete(synchronize_session=False)
-        db.commit()
-        return []
-
-    ambiguities = ctx.ambiguities  # list of dicts
+    ambiguities = (ctx.ambiguities or []) if ctx else []
 
     existing = {
-        (d.requirement_id, d.issue_type, d.description[:80]): d
+        (d.requirement_id, d.issue_type, d.description[:60].strip().lower()): d
         for d in db.query(ClarificationDecision)
         .filter(ClarificationDecision.project_id == project_id)
         .all()
     }
 
-    kept_keys = set()
+    seen_keys = set()
     result = []
 
     for amb in ambiguities:
         req_id = amb.get("requirement_id")
-        issue_type = amb.get("issue_type", "")
+        issue_type = amb.get("issue_type", "Ambiguity")
         description = amb.get("description", "")
         suggested_question = amb.get("suggested_question", "")
 
-        key = (req_id, issue_type, description[:80])
-        kept_keys.add(key)
+        key = (req_id, issue_type, description[:60].strip().lower())
+        seen_keys.add(key)
 
         if key in existing:
-            # Preserve existing decision
-            result.append(existing[key])
+            dec = existing[key]
+            dec.is_superseded = False
+            result.append(dec)
         else:
-            # Create a new pending decision
             new_dec = ClarificationDecision(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
@@ -109,21 +149,245 @@ def sync_clarification_decisions(project_id: str, db: Session = Depends(get_db))
                 issue_type=issue_type,
                 description=description,
                 suggested_question=suggested_question,
+                status="Open",
                 decision="pending",
+                history=[{
+                    "action": "created",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "note": "Extracted from context"
+                }]
             )
             db.add(new_dec)
             result.append(new_dec)
 
-    # Delete decisions for ambiguities that no longer exist
+    # Mark remaining unreferenced decisions as superseded (never delete!)
     for key, dec in existing.items():
-        if key not in kept_keys:
-            db.delete(dec)
+        if key not in seen_keys:
+            dec.is_superseded = True
+            result.append(dec)
 
     db.commit()
     for r in result:
         db.refresh(r)
 
-    return result
+    return [r for r in result if not r.is_superseded]
+
+
+@router.post(
+    "/clarifications/{project_id}/{decision_id}/answer",
+    response_model=ClarificationDecisionResponse
+)
+@router.patch(
+    "/clarifications/{project_id}/{decision_id}/answer",
+    response_model=ClarificationDecisionResponse
+)
+def answer_clarification(
+    decision_id: str,
+    payload: AnswerPayload,
+    project: Project = Depends(get_project_editor),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Submits an authoritative answer. Nonblank answer is strictly required.
+    Marks downstream test cases stale.
+    """
+    cleaned_answer = payload.answer.strip()
+    if not cleaned_answer:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A non-empty answer is required to mark this clarification as Answered."
+        )
+
+    dec = db.query(ClarificationDecision).filter(
+        ClarificationDecision.id == decision_id,
+        ClarificationDecision.project_id == project.id
+    ).first()
+    if not dec:
+        raise HTTPException(status_code=404, detail="Clarification item not found.")
+
+    now = datetime.now(timezone.utc)
+    prev_status = dec.status
+    dec.reviewer_answer = cleaned_answer
+    dec.status = "Answered"
+    dec.decision = "answered"
+    dec.answered_by = current_user.email or current_user.id
+    dec.answered_at = now
+    dec.updated_at = now
+
+    hist = list(dec.history or [])
+    hist.append({
+        "action": "answered",
+        "user": current_user.email or current_user.id,
+        "timestamp": now.isoformat(),
+        "previous_status": prev_status,
+        "new_status": "Answered",
+        "answer": cleaned_answer
+    })
+    dec.history = hist
+
+    # Invalidate affected tests
+    _mark_affected_tests_stale(project.id, dec.requirement_id, db)
+
+    db.commit()
+    db.refresh(dec)
+    return dec
+
+
+@router.post(
+    "/clarifications/{project_id}/{decision_id}/confirm",
+    response_model=ClarificationDecisionResponse
+)
+@router.patch(
+    "/clarifications/{project_id}/{decision_id}/confirm",
+    response_model=ClarificationDecisionResponse
+)
+def confirm_clarification(
+    decision_id: str,
+    project: Project = Depends(get_project_editor),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reviewer confirms the answer as authoritative (Resolved status).
+    Requires a nonblank answer to be present.
+    """
+    dec = db.query(ClarificationDecision).filter(
+        ClarificationDecision.id == decision_id,
+        ClarificationDecision.project_id == project.id
+    ).first()
+    if not dec:
+        raise HTTPException(status_code=404, detail="Clarification item not found.")
+
+    if not dec.reviewer_answer or not dec.reviewer_answer.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot resolve clarification without a recorded answer."
+        )
+
+    now = datetime.now(timezone.utc)
+    prev_status = dec.status
+    dec.status = "Resolved"
+    dec.decision = "accepted"
+    dec.confirmed_by = current_user.email or current_user.id
+    dec.confirmed_at = now
+    dec.updated_at = now
+
+    hist = list(dec.history or [])
+    hist.append({
+        "action": "confirmed",
+        "user": current_user.email or current_user.id,
+        "timestamp": now.isoformat(),
+        "previous_status": prev_status,
+        "new_status": "Resolved"
+    })
+    dec.history = hist
+
+    db.commit()
+    db.refresh(dec)
+    return dec
+
+
+@router.post(
+    "/clarifications/{project_id}/{decision_id}/dismiss",
+    response_model=ClarificationDecisionResponse
+)
+@router.patch(
+    "/clarifications/{project_id}/{decision_id}/dismiss",
+    response_model=ClarificationDecisionResponse
+)
+def dismiss_clarification(
+    decision_id: str,
+    payload: DismissPayload,
+    project: Project = Depends(get_project_editor),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Dismisses clarification item. Mandatory reason is required.
+    """
+    cleaned_reason = payload.reason.strip()
+    if not cleaned_reason:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A non-empty dismissal reason is required."
+        )
+
+    dec = db.query(ClarificationDecision).filter(
+        ClarificationDecision.id == decision_id,
+        ClarificationDecision.project_id == project.id
+    ).first()
+    if not dec:
+        raise HTTPException(status_code=404, detail="Clarification item not found.")
+
+    now = datetime.now(timezone.utc)
+    prev_status = dec.status
+    dec.status = "Dismissed"
+    dec.decision = "rejected"
+    dec.dismissal_reason = cleaned_reason
+    dec.dismissed_by = current_user.email or current_user.id
+    dec.dismissed_at = now
+    dec.updated_at = now
+
+    hist = list(dec.history or [])
+    hist.append({
+        "action": "dismissed",
+        "user": current_user.email or current_user.id,
+        "timestamp": now.isoformat(),
+        "previous_status": prev_status,
+        "new_status": "Dismissed",
+        "reason": cleaned_reason
+    })
+    dec.history = hist
+
+    db.commit()
+    db.refresh(dec)
+    return dec
+
+
+@router.post(
+    "/clarifications/{project_id}/{decision_id}/reopen",
+    response_model=ClarificationDecisionResponse
+)
+@router.patch(
+    "/clarifications/{project_id}/{decision_id}/reopen",
+    response_model=ClarificationDecisionResponse
+)
+def reopen_clarification(
+    decision_id: str,
+    project: Project = Depends(get_project_editor),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reopens a dismissed or answered clarification back to Open status."""
+    dec = db.query(ClarificationDecision).filter(
+        ClarificationDecision.id == decision_id,
+        ClarificationDecision.project_id == project.id
+    ).first()
+    if not dec:
+        raise HTTPException(status_code=404, detail="Clarification item not found.")
+
+    now = datetime.now(timezone.utc)
+    prev_status = dec.status
+    dec.status = "Open"
+    dec.decision = "pending"
+    dec.reopened_by = current_user.email or current_user.id
+    dec.reopened_at = now
+    dec.updated_at = now
+
+    hist = list(dec.history or [])
+    hist.append({
+        "action": "reopened",
+        "user": current_user.email or current_user.id,
+        "timestamp": now.isoformat(),
+        "previous_status": prev_status,
+        "new_status": "Open"
+    })
+    dec.history = hist
+
+    db.commit()
+    db.refresh(dec)
+    return dec
 
 
 @router.patch(
@@ -131,38 +395,64 @@ def sync_clarification_decisions(project_id: str, db: Session = Depends(get_db))
     response_model=ClarificationDecisionResponse
 )
 def update_clarification_decision(
-    project_id: str,
     decision_id: str,
     payload: UpdateDecisionPayload,
+    project: Project = Depends(get_project_editor),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Record the reviewer's decision (accept / reject / answer) on an ambiguity."""
+    """Generic update endpoint with validation for legacy and inline edits."""
     dec = db.query(ClarificationDecision).filter(
         ClarificationDecision.id == decision_id,
-        ClarificationDecision.project_id == project_id,
+        ClarificationDecision.project_id == project.id,
     ).first()
     if not dec:
         raise HTTPException(status_code=404, detail="Clarification decision not found.")
 
-    allowed = {"accepted", "rejected", "answered", "pending"}
-    if payload.decision not in allowed:
-        raise HTTPException(
-            status_code=422,
-            detail=f"decision must be one of {sorted(allowed)}"
-        )
+    now = datetime.now(timezone.utc)
+    hist = list(dec.history or [])
 
-    dec.decision = payload.decision
-    dec.reviewer_answer = payload.reviewer_answer
-    dec.updated_at = datetime.now(timezone.utc)
+    if payload.reviewer_answer is not None:
+        dec.reviewer_answer = payload.reviewer_answer.strip()
+        if dec.reviewer_answer:
+            dec.status = "Answered"
+            dec.decision = "answered"
+            dec.answered_by = current_user.email or current_user.id
+            dec.answered_at = now
+            _mark_affected_tests_stale(project.id, dec.requirement_id, db)
+
+    if payload.status:
+        if payload.status == "Dismissed" and not (payload.dismissal_reason or dec.dismissal_reason):
+            raise HTTPException(
+                status_code=422,
+                detail="A dismissal reason is required to dismiss a clarification."
+            )
+        dec.status = payload.status
+
+    if payload.dismissal_reason is not None:
+        dec.dismissal_reason = payload.dismissal_reason.strip()
+
+    dec.updated_at = now
+    hist.append({
+        "action": "updated",
+        "user": current_user.email or current_user.id,
+        "timestamp": now.isoformat(),
+        "status": dec.status
+    })
+    dec.history = hist
+
     db.commit()
     db.refresh(dec)
     return dec
 
 
 @router.delete("/clarifications/{project_id}", status_code=204)
-def delete_clarification_decisions(project_id: str, db: Session = Depends(get_db)):
-    """Clear all clarification decisions for a project (called on re-extraction)."""
+def delete_clarification_decisions(
+    project: Project = Depends(get_project_editor),
+    db: Session = Depends(get_db)
+):
+    """Clear all clarification decisions for a project."""
     db.query(ClarificationDecision).filter(
-        ClarificationDecision.project_id == project_id
+        ClarificationDecision.project_id == project.id
     ).delete(synchronize_session=False)
     db.commit()

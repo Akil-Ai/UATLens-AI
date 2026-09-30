@@ -92,40 +92,67 @@ class LLMClient:
         current_case: Dict[str, Any],
         requirement_text: str,
         target_field: str,
-        instruction: str = ""
+        instruction: str = "",
+        context_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Regenerates expected_result, steps, or the entire row while keeping user edits intact.
+        Regenerates expected_result, steps, or entire row using live configured LLM
+        (Anthropic or Gemini) or high-fidelity domain-aware deterministic synthesis.
         """
-        if self.is_configured():
+        if self.provider == "anthropic" and self.anthropic_key:
             try:
-                # Call configured LLM if keys exist
-                pass
+                return await self._anthropic_regenerate_field(
+                    current_case, requirement_text, target_field, instruction, context_data
+                )
             except Exception as e:
-                logger.warning(f"Live LLM regenerate failed: {e}. Falling back.")
+                logger.error(f"Live Anthropic field regenerate failed: {e}. Using deterministic synthesis.")
 
-        # High fidelity fallback logic for instant response
+        if self.provider == "gemini" and self.gemini_key:
+            try:
+                return await self._gemini_regenerate_field(
+                    current_case, requirement_text, target_field, instruction, context_data
+                )
+            except Exception as e:
+                logger.error(f"Live Gemini field regenerate failed: {e}. Using deterministic synthesis.")
+
+        # Clean, domain-neutral deterministic synthesis
         updated = dict(current_case)
+        scenario_desc = current_case.get("scenario", "specified action")
+        role = current_case.get("role", "User")
+        user_note = f" (Instruction applied: {instruction})" if instruction else ""
+
+        # Extract domain verbs/nouns from requirement_text
+        domain_snippet = requirement_text.split(".")[0].strip() if requirement_text else scenario_desc
+
         if target_field == "expected_result":
-            action_desc = current_case.get("scenario", "this action")
-            user_note = f" (Refined: {instruction})" if instruction else ""
             if current_case.get("scenario_type") == "Positive":
-                updated["expected_result"] = f"System validates and successfully executes {action_desc}. Immediate confirmation response is returned with status 200 OK.{user_note}"
+                updated["expected_result"] = (
+                    f"System authorizes and successfully completes '{scenario_desc}' for {role}. "
+                    f"State update is persisted and observable confirmation is rendered.{user_note}"
+                )
             elif current_case.get("scenario_type") == "Negative":
-                updated["expected_result"] = f"System halts execution and displays specific error dialog: 'Action rejected by business validation'. HTTP 400 Bad Request.{user_note}"
+                updated["expected_result"] = (
+                    f"System halts execution and displays explicit validation message: "
+                    f"'Action rejected: Operation violates requirement policy'. No state change occurs.{user_note}"
+                )
             else:
-                updated["expected_result"] = f"System enforces exact boundary limit. Values strictly within boundary succeed; boundary+1 trigger explicit constraint notice.{user_note}"
+                updated["expected_result"] = (
+                    f"System enforces boundary thresholds per specifications. Inputs strictly within limit succeed; "
+                    f"inputs at limit+1 produce clear constraint rejection notice.{user_note}"
+                )
         elif target_field == "steps":
-            role = current_case.get("role", "User")
             updated["steps"] = [
-                f"1. Log in to GlobalRetail platform as '{role}' with verified session credentials.",
-                f"2. Navigate to target workflow module for {current_case.get('scenario', 'checkout')}.",
-                f"3. Input configured test parameters: {json.dumps(current_case.get('test_data', {}))}.",
-                f"4. Click submit and observe immediate system response and telemetry logs."
+                f"1. Authenticate and establish verified session as authorized role '{role}'.",
+                f"2. Navigate to module governing: {domain_snippet}.",
+                f"3. Execute test action: {scenario_desc} with configured inputs: {json.dumps(current_case.get('test_data', {}))}.",
+                f"4. Confirm that observable output matches expected acceptance criteria.{user_note}"
             ]
         elif target_field == "entire_row":
-            updated["expected_result"] = f"Action processed strictly conforming to business rule with complete audit record."
-            updated["status"] = "Reviewed"
+            updated["scenario"] = f"{scenario_desc} - Refined" if not instruction else f"{scenario_desc} ({instruction})"
+            updated["expected_result"] = (
+                f"Action processed strictly conforming to {domain_snippet} with complete audit logging.{user_note}"
+            )
+            updated["status"] = "Draft"
 
         return updated
 
@@ -228,6 +255,57 @@ class LLMClient:
         
         raise ValueError("Anthropic did not return test cases tool call.")
 
+    async def _anthropic_regenerate_field(
+        self,
+        current_case: Dict[str, Any],
+        requirement_text: str,
+        target_field: str,
+        instruction: str = "",
+        context_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        import anthropic
+        client = anthropic.Anthropic(api_key=self.anthropic_key)
+
+        prompt = REGENERATE_FIELD_USER_PROMPT.format(
+            requirement_text=requirement_text,
+            test_case_json=json.dumps(current_case, indent=2),
+            target_field=target_field,
+            instruction=instruction
+        )
+        field_schema = {
+            "type": "object",
+            "properties": {
+                "expected_result": {"type": "string"},
+                "steps": {"type": "array", "items": {"type": "string"}},
+                "scenario": {"type": "string"}
+            }
+        }
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=1500,
+            temperature=0.1,
+            system=REGENERATE_FIELD_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+            tools=[{"name": "apply_field_update", "description": "Output regenerated field data", "input_schema": field_schema}],
+            tool_choice={"type": "tool", "name": "apply_field_update"}
+        )
+        for block in response.content:
+            if block.type == "tool_use" and block.name == "apply_field_update":
+                updated = dict(current_case)
+                if target_field == "expected_result":
+                    updated["expected_result"] = block.input.get("expected_result", current_case.get("expected_result"))
+                elif target_field == "steps":
+                    updated["steps"] = block.input.get("steps", current_case.get("steps"))
+                elif target_field == "entire_row":
+                    if "expected_result" in block.input:
+                        updated["expected_result"] = block.input["expected_result"]
+                    if "steps" in block.input:
+                        updated["steps"] = block.input["steps"]
+                    if "scenario" in block.input:
+                        updated["scenario"] = block.input["scenario"]
+                return updated
+        raise ValueError("Anthropic did not return expected tool call for field regeneration.")
+
     # ------------------ GEMINI IMPLEMENTATION ------------------
     async def _gemini_extract_context(self, document_text: str) -> ExtractedContextData:
         from google import genai
@@ -292,6 +370,49 @@ class LLMClient:
         )
         data = json.loads(response.text)
         return data if isinstance(data, list) else data.get("test_cases", [])
+
+    async def _gemini_regenerate_field(
+        self,
+        current_case: Dict[str, Any],
+        requirement_text: str,
+        target_field: str,
+        instruction: str = "",
+        context_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=self.gemini_key)
+
+        prompt_body = REGENERATE_FIELD_USER_PROMPT.format(
+            requirement_text=requirement_text,
+            test_case_json=json.dumps(current_case, indent=2),
+            target_field=target_field,
+            instruction=instruction
+        )
+        prompt = f"{REGENERATE_FIELD_SYSTEM_PROMPT}\n\n{prompt_body}\nReturn JSON with keys matching the regenerated field."
+
+        response = client.models.generate_content(
+            model=self.model if "gemini" in self.model else "gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1,
+            )
+        )
+        data = json.loads(response.text)
+        updated = dict(current_case)
+        if target_field == "expected_result":
+            updated["expected_result"] = data.get("expected_result", current_case.get("expected_result"))
+        elif target_field == "steps":
+            updated["steps"] = data.get("steps", current_case.get("steps"))
+        elif target_field == "entire_row":
+            if "expected_result" in data:
+                updated["expected_result"] = data["expected_result"]
+            if "steps" in data:
+                updated["steps"] = data["steps"]
+            if "scenario" in data:
+                updated["scenario"] = data["scenario"]
+        return updated
 
     # ------------------ HIGH-FIDELITY OFFLINE FALLBACK GENERATOR ------------------
     def _fallback_extract_context(self, document_text: str) -> ExtractedContextData:
@@ -978,12 +1099,60 @@ class LLMClient:
             }
         ]
 
-        # Filter or return based on batch if batching
         if not requirements_batch:
             return all_cases
         req_ids = {r.get("id") for r in requirements_batch}
         matching = [c for c in all_cases if c.get("requirement_id") in req_ids]
-        return matching if matching else all_cases
+        if matching:
+            return matching
+
+        # Synthesize realistic domain-aware cases for custom requirements
+        custom_cases = []
+        for req in requirements_batch:
+            r_id = req.get("id", "REQ-001")
+            r_title = req.get("title", "Requirement")
+            r_quote = req.get("source_quote") or req.get("text", "")
+            roles = req.get("roles_involved") or ["Registered Customer"]
+            primary_role = roles[0] if isinstance(roles, list) and roles else "Registered Customer"
+
+            custom_cases.append({
+                "requirement_id": r_id,
+                "business_rule_ids": [],
+                "scenario": f"Verify successful execution of {r_title}",
+                "scenario_type": "Positive",
+                "role": primary_role,
+                "priority": "High",
+                "preconditions": [f"System initialized for {r_title}"],
+                "steps": [
+                    f"1. Navigate to {r_title} interface.",
+                    f"2. Submit valid parameters as specified in requirement.",
+                    f"3. Confirm operation completion."
+                ],
+                "test_data": {"action": "execute", "requirement": r_id},
+                "expected_result": req.get("expected_outcome") or f"{r_title} executes successfully with expected confirmation.",
+                "source_quote": r_quote,
+                "status": "Draft",
+                "flags": []
+            })
+            custom_cases.append({
+                "requirement_id": r_id,
+                "business_rule_ids": [],
+                "scenario": f"Verify error handling on invalid submission for {r_title}",
+                "scenario_type": "Negative",
+                "role": primary_role,
+                "priority": "Medium",
+                "preconditions": [f"User is on {r_title} view"],
+                "steps": [
+                    f"1. Enter invalid or out-of-range input.",
+                    f"2. Attempt to submit {r_title} action."
+                ],
+                "test_data": {"action": "invalid_submission", "requirement": r_id},
+                "expected_result": f"System displays descriptive validation error and prevents invalid state.",
+                "source_quote": r_quote,
+                "status": "Draft",
+                "flags": []
+            })
+        return custom_cases
 
 
 llm_client = LLMClient()

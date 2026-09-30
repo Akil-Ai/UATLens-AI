@@ -4,18 +4,22 @@ from backend.app.db.session import get_db
 from backend.app.models.entities import Project, TestCase, Requirement, Flag
 from backend.app.validation.engine import validate_test_suite
 from backend.app.schemas.validation import SuiteValidationReport
+from backend.app.core.auth import AuthUser, get_current_user
+from backend.app.core.project_access import check_project_access
 
 router = APIRouter(tags=["Validation"])
 
 
 @router.post("/validate-suite", response_model=SuiteValidationReport)
-def validate_suite(project_id: str = Query(...), db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+def validate_suite(
+    project_id: str = Query(...),
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    project = check_project_access(project_id, current_user, db, required_role="viewer")
 
     cases = db.query(TestCase).filter(TestCase.project_id == project_id).order_by(TestCase.id.asc()).all()
-    reqs = db.query(Requirement).filter(Requirement.project_id == project_id).all()
+    all_reqs = db.query(Requirement).filter(Requirement.project_id == project_id).all()
 
     tc_dicts = [
         {
@@ -29,13 +33,14 @@ def validate_suite(project_id: str = Query(...), db: Session = Depends(get_db)):
             "steps": c.steps or [],
             "test_data": c.test_data or {},
             "expected_result": c.expected_result,
-            "source_quote": c.source_quote,
+            "source_quote": c.source_quote or "",
             "status": c.status,
             "flags": []
         }
         for c in cases
     ]
-    req_dicts = [{"id": r.id, "title": r.title, "text": r.text} for r in reqs]
+    # Pass ALL requirements to validate coverage accurately
+    req_dicts = [{"id": r.id, "title": r.title, "text": r.text} for r in all_reqs]
 
     report = validate_test_suite(tc_dicts, req_dicts, project.raw_text)
 

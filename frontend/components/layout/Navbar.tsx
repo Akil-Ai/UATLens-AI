@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Plus, FolderGit2, User, ChevronDown, LogOut, ShieldCheck } from "lucide-react";
 import { ProjectSummary } from "@/types";
+import { supabase, clearAuthCookies } from "@/lib/supabase";
 
 interface NavbarProps {
   currentProject: ProjectSummary | null;
@@ -31,9 +32,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     } catch {}
   }, []);
 
-  const handleSignOut = () => {
-    // Clear session cookie and session storage
-    document.cookie = "uatlens_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {}
+    clearAuthCookies();
     sessionStorage.removeItem("uatlens_user");
     window.location.href = "/login";
   };
