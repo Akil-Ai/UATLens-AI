@@ -1,7 +1,6 @@
 import { getAccessToken, clearAuthCookies } from "./supabase";
 
-const API_BASE = "/api";
-
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken();
   const headers = new Headers(options.headers || {});
