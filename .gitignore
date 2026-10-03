@@ -15,6 +15,8 @@ frontend/out/
 
 # Database & runtime
 *.db
+*.db.bak*
+*.bak
 *.sqlite
 *.sqlite3
 
