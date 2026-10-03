@@ -37,7 +37,7 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows Next.js local dev
+    allow_origins=settings.cors_origin_list,  # Uses origins from .env or defaults
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
