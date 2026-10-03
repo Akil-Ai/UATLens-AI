@@ -60,3 +60,17 @@ def test_admin_override_precondition_flag():
     flags = validate_test_case(tc, raw_document="Admin can override an order status.")
     flag_types = [f["type"] for f in flags]
     assert "Missing Precondition Details" in flag_types
+
+
+def test_missing_steps_or_expected_result():
+    tc = {
+        "id": "TC-003",
+        "scenario": "Incomplete test case",
+        "expected_result": "",
+        "steps": [],
+        "source_quote": ""
+    }
+    flags = validate_test_case(tc, raw_document="Some document text")
+    flag_types = [f["type"] for f in flags]
+    assert "Unverified Source" in flag_types or "Incomplete Definition" in flag_types or len(flags) > 0
+
