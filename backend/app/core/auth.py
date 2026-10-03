@@ -239,3 +239,10 @@ async def get_optional_user(
         return verify_supabase_token(token)
     except Exception:
         return None
+
+
+def clear_token_cache() -> None:
+    """Clears the in-memory JWT validation cache."""
+    global _token_cache
+    _token_cache.clear()
+
