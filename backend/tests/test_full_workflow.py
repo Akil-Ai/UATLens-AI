@@ -1,3 +1,7 @@
+"""
+Integration test suite for end-to-end API workflows.
+Validates permission analysis, clarification lifecycles, versioned test suite regeneration, and source evidence verification.
+"""
 import io
 import json
 import pytest
@@ -8,6 +12,7 @@ from backend.app.db.session import SessionLocal
 from backend.app.models.entities import (
     Project, Requirement, TestCase, PermissionRule, ClarificationDecision, TestSuiteVersion
 )
+
 from backend.app.services.permission_analyzer import extract_permission_rules, reconcile_permission_rules
 from backend.app.validation.engine import verify_source_quote_detailed, normalize_text_for_search
 from backend.app.parsing.docx_parser import parse_docx
