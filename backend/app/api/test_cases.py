@@ -150,19 +150,20 @@ async def generate_test_cases_stream(
         total_reqs = max(len(req_list), 1)
         generated_cases: List[Dict[str, Any]] = []
 
-        semaphore = asyncio.Semaphore(2)
+        semaphore = asyncio.Semaphore(5)
 
         async def run_batch(b_idx: int, batch: List[Dict[str, Any]]):
             async with semaphore:
                 return await llm_client.generate_test_cases_batch(batch, ctx_dict, b_idx + 1)
 
-        for b_idx, batch in enumerate(req_batches):
-            yield f"data: {json.dumps({'event': 'progress', 'completed': b_idx * batch_size, 'total': total_reqs, 'message': f'Analyzing & generating batch {b_idx+1} of {len(req_batches)}...'})}\n\n"
-            await asyncio.sleep(0.1)
-
+        tasks = [run_batch(b_idx, batch) for b_idx, batch in enumerate(req_batches)]
+        
+        for idx, task in enumerate(asyncio.as_completed(tasks)):
             try:
-                batch_cases = await run_batch(b_idx, batch)
+                batch_cases = await task
                 generated_cases.extend(batch_cases)
+                completed_so_far = (idx + 1) * batch_size
+                yield f"data: {json.dumps({'event': 'progress', 'completed': min(completed_so_far, total_reqs), 'total': total_reqs, 'message': f'Analyzed & generated {idx+1} of {len(req_batches)} batches...'})}\n\n"
             except Exception as batch_err:
                 yield f"data: {json.dumps({'event': 'error', 'message': f'Batch generation failed: {str(batch_err)}. Aborting without altering existing tests.'})}\n\n"
                 return
@@ -198,7 +199,7 @@ async def generate_test_cases_stream(
         candidate_versions = []
 
         for item in generated_cases:
-            scen_norm = item.get("scenario", "").strip().lower()
+            scen_norm = (item.get("scenario") or "").strip().lower()
             if scen_norm in seen_scenarios:
                 continue
             seen_scenarios.add(scen_norm)
@@ -210,8 +211,8 @@ async def generate_test_cases_stream(
             item["status"] = "Draft"  # Never automatically mark Reviewed or Approved
 
             # Link permission rules
-            tc_role = item.get("role", "Guest")
-            tc_action = item.get("scenario", "")
+            tc_role = item.get("role") or "Guest"
+            tc_action = item.get("scenario") or ""
             linked_rules = []
             is_blocked = False
             blocked_reason = None
@@ -285,19 +286,19 @@ async def generate_test_cases_stream(
                     id=item["id"],
                     project_id=project_id,
                     requirement_id=item.get("requirement_id"),
-                    business_rule_ids=item.get("business_rule_ids", []),
-                    scenario=item.get("scenario", ""),
-                    scenario_type=item.get("scenario_type", "Positive"),
-                    role=item.get("role", "Guest"),
-                    priority=item.get("priority", "Medium"),
-                    preconditions=item.get("preconditions", []),
-                    steps=item.get("steps", []),
-                    test_data=item.get("test_data", {}),
-                    expected_result=item.get("expected_result", ""),
-                    source_quote=item.get("source_quote", ""),
+                    business_rule_ids=item.get("business_rule_ids") or [],
+                    scenario=item.get("scenario") or "",
+                    scenario_type=item.get("scenario_type") or "Positive",
+                    role=item.get("role") or "Guest",
+                    priority=item.get("priority") or "Medium",
+                    preconditions=item.get("preconditions") or [],
+                    steps=item.get("steps") or [],
+                    test_data=item.get("test_data") or {},
+                    expected_result=item.get("expected_result") or "",
+                    source_quote=item.get("source_quote") or "",
                     status="Draft",
                     is_stale=False,
-                    permission_rule_ids=item.get("permission_rule_ids", []),
+                    permission_rule_ids=item.get("permission_rule_ids") or [],
                     permission_rule_revision=1,
                     is_blocked=item.get("is_blocked", False),
                     blocked_reason=item.get("blocked_reason")
