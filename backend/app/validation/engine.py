@@ -107,7 +107,7 @@ def validate_test_case(test_case: Dict[str, Any], raw_document: str = "") -> Lis
     """
     Runs deterministic validations on an individual test case.
     """
-    flags = list(test_case.get("flags", []))
+    flags = list(test_case.get("flags") or [])
     existing_types = {f.get("type") for f in flags}
 
     # 1. Source Quote Verification
@@ -144,9 +144,9 @@ def validate_test_case(test_case: Dict[str, Any], raw_document: str = "") -> Lis
             })
 
     # 2. Incomplete Case Check
-    scenario = test_case.get("scenario", "").strip()
-    expected = test_case.get("expected_result", "").strip()
-    steps = test_case.get("steps", [])
+    scenario = (test_case.get("scenario") or "").strip()
+    expected = (test_case.get("expected_result") or "").strip()
+    steps = test_case.get("steps") or []
 
     if not steps or len(steps) < 2 or not expected:
         if "Incomplete Case" not in existing_types:
