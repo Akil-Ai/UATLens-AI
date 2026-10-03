@@ -306,6 +306,15 @@ class LLMClient:
                 return updated
         raise ValueError("Anthropic did not return expected tool call for field regeneration.")
 
+    def _get_gemini_models(self) -> List[str]:
+        models = []
+        if self.model:
+            models.append(self.model)
+        for m in ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-2.0-flash"]:
+            if m not in models:
+                models.append(m)
+        return models
+
     # ------------------ GEMINI IMPLEMENTATION ------------------
     async def _gemini_extract_context(self, document_text: str) -> ExtractedContextData:
         from google import genai
@@ -314,16 +323,30 @@ class LLMClient:
 
         prompt = CONTEXT_EXTRACTION_USER_PROMPT_TEMPLATE.format(document_text=document_text)
         
-        response = client.models.generate_content(
-            model=self.model if "gemini" in self.model else "gemini-2.0-flash",
-            contents=f"{CONTEXT_EXTRACTION_SYSTEM_PROMPT}\n\n{prompt}",
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ExtractedContextData,
-                temperature=0.1,
-            )
-        )
-        return ExtractedContextData.model_validate_json(response.text)
+        last_error = None
+        for m in self._get_gemini_models():
+            try:
+                response = await client.aio.models.generate_content(
+                    model=m,
+                    contents=f"{CONTEXT_EXTRACTION_SYSTEM_PROMPT}\n\n{prompt}",
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ExtractedContextData,
+                        temperature=0.1,
+                    )
+                )
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:]
+                if raw_text.startswith("```"):
+                    raw_text = raw_text[3:]
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3]
+                return ExtractedContextData.model_validate_json(raw_text.strip())
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Gemini model {m} failed for context extraction: {e}. Trying fallback model...")
+        raise last_error or RuntimeError("All Gemini models failed")
 
     async def _gemini_generate_test_cases(
         self,
@@ -358,18 +381,31 @@ class LLMClient:
             clarification_section=clarification_section,
             permission_section=permission_section,
         )
-        prompt = f"{TEST_CASE_GENERATION_SYSTEM_PROMPT}\n\n{prompt_body}"
+        prompt = f"{TEST_CASE_GENERATION_SYSTEM_PROMPT}\n\n{prompt_body}\n\nReturn a JSON array of test cases or an object with a 'test_cases' array."
 
-        response = client.models.generate_content(
-            model=self.model if "gemini" in self.model else "gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.1,
-            )
-        )
-        data = json.loads(response.text)
-        return data if isinstance(data, list) else data.get("test_cases", [])
+        last_error = None
+        for m in self._get_gemini_models():
+            try:
+                response = await client.aio.models.generate_content(
+                    model=m,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.1,
+                    )
+                )
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:]
+                if raw_text.startswith("```"):
+                    raw_text = raw_text[3:]
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3]
+                data = json.loads(raw_text.strip())
+                return data if isinstance(data, list) else data.get("test_cases", [])
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Gemini model {m} failed for test case generation: {e}. Trying fallback model...")
+        raise last_error or RuntimeError("All Gemini models failed")
 
     async def _gemini_regenerate_field(
         self,
@@ -391,28 +427,42 @@ class LLMClient:
         )
         prompt = f"{REGENERATE_FIELD_SYSTEM_PROMPT}\n\n{prompt_body}\nReturn JSON with keys matching the regenerated field."
 
-        response = client.models.generate_content(
-            model=self.model if "gemini" in self.model else "gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.1,
-            )
-        )
-        data = json.loads(response.text)
-        updated = dict(current_case)
-        if target_field == "expected_result":
-            updated["expected_result"] = data.get("expected_result", current_case.get("expected_result"))
-        elif target_field == "steps":
-            updated["steps"] = data.get("steps", current_case.get("steps"))
-        elif target_field == "entire_row":
-            if "expected_result" in data:
-                updated["expected_result"] = data["expected_result"]
-            if "steps" in data:
-                updated["steps"] = data["steps"]
-            if "scenario" in data:
-                updated["scenario"] = data["scenario"]
-        return updated
+        last_error = None
+        for m in self._get_gemini_models():
+            try:
+                response = await client.aio.models.generate_content(
+                    model=m,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1,
+                    )
+                )
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"):
+                    raw_text = raw_text[7:]
+                if raw_text.startswith("```"):
+                    raw_text = raw_text[3:]
+                if raw_text.endswith("```"):
+                    raw_text = raw_text[:-3]
+                data = json.loads(raw_text.strip())
+                updated = dict(current_case)
+                if target_field == "expected_result":
+                    updated["expected_result"] = data.get("expected_result", current_case.get("expected_result"))
+                elif target_field == "steps":
+                    updated["steps"] = data.get("steps", current_case.get("steps"))
+                elif target_field == "entire_row":
+                    if "expected_result" in data:
+                        updated["expected_result"] = data["expected_result"]
+                    if "steps" in data:
+                        updated["steps"] = data["steps"]
+                    if "scenario" in data:
+                        updated["scenario"] = data["scenario"]
+                return updated
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Gemini model {m} failed for field regeneration: {e}. Trying fallback model...")
+        raise last_error or RuntimeError("All Gemini models failed")
 
     # ------------------ HIGH-FIDELITY OFFLINE FALLBACK GENERATOR ------------------
     def _fallback_extract_context(self, document_text: str) -> ExtractedContextData:
