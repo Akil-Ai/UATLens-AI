@@ -166,7 +166,10 @@ def generate_zip_bundle(
     permission_rules: List[Dict[str, Any]],
     project_name: str = "UATLens"
 ) -> io.BytesIO:
-    """Packages all tabular entities into a clean multi-file ZIP archive."""
+    """
+    Packages all tabular entities into a clean multi-file ZIP archive.
+    Includes UTF-8 BOM prefix for seamless Microsoft Excel compatibility.
+    """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.writestr("test_cases.csv", "\ufeff" + generate_standard_csv(test_cases).getvalue())
@@ -175,3 +178,4 @@ def generate_zip_bundle(
         zip_file.writestr("permission_rules.csv", "\ufeff" + generate_permissions_csv(permission_rules).getvalue())
     buf.seek(0)
     return buf
+
