@@ -70,3 +70,12 @@ class BulkUpdateTestCasesRequest(BaseModel):
     test_case_ids: List[str]
     action: str = Field(description="'approve', 'delete', 'set_priority', 'mark_reviewed'")
     value: Optional[str] = None
+
+
+class TestSuiteSummary(BaseModel):
+    total_test_cases: int = 0
+    passed_count: int = 0
+    failed_count: int = 0
+    flagged_count: int = 0
+    priorities_breakdown: Dict[str, int] = Field(default_factory=dict)
+
