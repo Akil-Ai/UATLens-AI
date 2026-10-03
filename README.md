@@ -95,6 +95,19 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
+## 🛠️ API Reference Endpoints
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| `GET` | `/health` | Service health status and environment check |
+| `POST` | `/api/v1/parse` | Parse uploaded PRD/BRD document files |
+| `POST` | `/api/v1/context/extract` | Extract business context, roles, and rules |
+| `POST` | `/api/v1/test-cases/generate/stream` | Stream generated UAT test cases via SSE |
+| `POST` | `/api/v1/export/excel` | Export test cases to formatted 4-sheet Excel |
+| `POST` | `/api/v1/export/csv` | Export test cases to standard/Jira CSV |
+
+---
+
 ## 👥 Core Development Team
 
 | Contributor | Role | GitHub | Email |
@@ -107,4 +120,4 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 ---
 
 ## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
