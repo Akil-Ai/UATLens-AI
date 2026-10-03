@@ -285,6 +285,13 @@ export default function Home() {
                 total: parsed.total_generated || accumulated.length,
                 message: parsed.message || "Complete!",
               });
+            } else if (parsed.event === "error") {
+              setStreamProgress({
+                completed: 0,
+                total: 0,
+                message: "Error: " + (parsed.message || "Generation failed"),
+              });
+              console.error("Stream error:", parsed.message);
             }
           } catch { /* skip malformed events */ }
         }
@@ -374,7 +381,7 @@ export default function Home() {
           onStepClick={goToStep}
         />
 
-        <main className="flex-1 px-4 sm:px-6 pb-12">
+        <main className="flex-1 pl-20 sm:pl-24 pr-4 sm:pr-6 pb-12">
           {/* ─── STAGE 1: Input ─── */}
           {currentStep === 1 && (
             <Stage1Input
