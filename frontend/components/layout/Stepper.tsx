@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { FileText, Cpu, Table2, BarChart3, Download, Check } from "lucide-react";
 
 export type StepNumber = 1 | 2 | 3 | 4 | 5;
@@ -12,11 +12,11 @@ interface StepperProps {
 }
 
 const STEPS = [
-  { step: 1 as StepNumber, title: "Input", subtitle: "Requirements & Docs", icon: FileText },
-  { step: 2 as StepNumber, title: "Context Review", subtitle: "Roles & Rules", icon: Cpu },
-  { step: 3 as StepNumber, title: "Test Case Grid", subtitle: "Review & Generate", icon: Table2 },
-  { step: 4 as StepNumber, title: "Dashboard", subtitle: "Coverage & Metrics", icon: BarChart3 },
-  { step: 5 as StepNumber, title: "Export", subtitle: "Excel & Multi-format", icon: Download },
+  { step: 1 as StepNumber, title: "Input", subtitle: "Requirements", icon: FileText },
+  { step: 2 as StepNumber, title: "Context", subtitle: "Roles & Rules", icon: Cpu },
+  { step: 3 as StepNumber, title: "Test Grid", subtitle: "Review Cases", icon: Table2 },
+  { step: 4 as StepNumber, title: "Dashboard", subtitle: "Metrics", icon: BarChart3 },
+  { step: 5 as StepNumber, title: "Export", subtitle: "Download", icon: Download },
 ];
 
 export const Stepper: React.FC<StepperProps> = ({
@@ -24,9 +24,19 @@ export const Stepper: React.FC<StepperProps> = ({
   maxReachedStep,
   onStepClick,
 }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 py-4 sm:py-6">
-      <div className="liquid-glass p-2.5 sm:p-3.5 rounded-3xl flex items-center justify-between relative overflow-hidden">
+    <div 
+      className="fixed left-4 top-1/2 -translate-y-1/2 z-50 flex"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div 
+        className={`liquid-glass py-4 px-2.5 rounded-full flex flex-col items-start gap-4 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.12)] bg-white/90 border border-slate-200/60 ${
+          isHovered ? "w-48" : "w-[60px]"
+        }`}
+      >
         {STEPS.map((item, idx) => {
           const isCurrent = currentStep === item.step;
           const isCompleted = item.step < currentStep || item.step <= maxReachedStep;
@@ -39,59 +49,58 @@ export const Stepper: React.FC<StepperProps> = ({
               <button
                 disabled={!isClickable}
                 onClick={() => isClickable && onStepClick(item.step)}
-                className={`flex items-center space-x-3 text-left px-3 py-2 rounded-2xl transition-all ${
+                className={`flex items-center space-x-3 w-full rounded-2xl transition-all ${
                   isCurrent
-                    ? "bg-white/90 border border-white shadow-md shadow-blue-500/10 scale-[1.02]"
+                    ? "opacity-100"
                     : isClickable
-                    ? "hover:bg-white/60 cursor-pointer"
-                    : "opacity-40 cursor-not-allowed"
+                    ? "hover:opacity-80 opacity-80 cursor-pointer"
+                    : "opacity-60 cursor-not-allowed"
                 }`}
               >
-                {/* Step badge/icon with Logo Azure -> Violet Gradient */}
+                {/* Step badge/icon with Orange Gradient */}
                 <div
-                  className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm transition-all ${
+                  className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all shadow-sm ${
                     isCurrent
-                      ? "bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white shadow-md shadow-blue-500/30 scale-105"
+                      ? "bg-gradient-to-tr from-orange-500 via-orange-600 to-amber-600 text-white shadow-orange-500/30 scale-105"
                       : isCompleted && item.step < currentStep
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-slate-200/80 text-slate-500"
+                      ? "bg-orange-500/90 text-white border border-orange-400/50"
+                      : "bg-slate-100 text-slate-400 border border-slate-200/60"
                   }`}
                 >
                   {isCompleted && item.step < currentStep ? (
-                    <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                    <Check className="w-5 h-5 stroke-[2.5]" />
                   ) : (
-                    <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <Icon className="w-5 h-5" />
                   )}
                 </div>
 
-                {/* Text titles */}
-                <div className="hidden md:block">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400">
-                      Step {item.step}
-                    </span>
-                  </div>
+                {/* Text titles - visible only on hover */}
+                <div 
+                  className={`flex flex-col items-start overflow-hidden whitespace-nowrap transition-all duration-300 ${
+                    isHovered ? "opacity-100 max-w-[120px] translate-x-0" : "opacity-0 max-w-0 -translate-x-4"
+                  }`}
+                >
                   <h4
-                    className={`text-xs sm:text-sm font-semibold leading-tight ${
-                      isCurrent ? "text-slate-900 font-bold" : "text-slate-700"
+                    className={`text-sm font-semibold leading-tight ${
+                      isCurrent ? "text-orange-600 font-bold" : "text-slate-700"
                     }`}
                   >
                     {item.title}
                   </h4>
-                  <p className="text-[10px] text-slate-400">{item.subtitle}</p>
+                  <p className="text-[10px] text-slate-500">{item.subtitle}</p>
                 </div>
               </button>
 
-              {/* Connecting line with Logo Gradient */}
+              {/* Connecting line / separator */}
               {idx < STEPS.length - 1 && (
-                <div className="flex-1 mx-2 sm:mx-3 h-0.5 bg-slate-200/60 rounded-full relative overflow-hidden hidden sm:block">
+                <div className="w-0.5 h-4 bg-slate-200/80 mx-auto rounded-full relative overflow-hidden flex-shrink-0">
                   <div
-                    className={`h-full transition-all duration-500 ${
+                    className={`w-full transition-all duration-500 ${
                       item.step < currentStep
-                        ? "bg-gradient-to-r from-blue-600 to-indigo-600 w-full"
+                        ? "bg-gradient-to-b from-orange-500 to-amber-500 h-full"
                         : item.step === currentStep
-                        ? "bg-gradient-to-r from-blue-600 to-violet-500 w-1/2"
-                        : "w-0"
+                        ? "bg-gradient-to-b from-orange-500 to-orange-400 h-1/2"
+                        : "h-0"
                     }`}
                   />
                 </div>
