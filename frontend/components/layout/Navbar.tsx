@@ -64,9 +64,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="relative">
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="liquid-glass-pill flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-700 transition-all cursor-pointer"
+              className="liquid-glass-pill flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-orange-500 transition-all cursor-pointer"
             >
-              <FolderGit2 className="w-3.5 h-3.5 text-blue-600" />
+              <FolderGit2 className="w-3.5 h-3.5 text-orange-500" />
               <span className="max-w-[130px] truncate">
                 {currentProject ? currentProject.name : "Select Project"}
               </span>
@@ -84,7 +84,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setDropdownOpen(false);
                       onNewProject();
                     }}
-                    className="p-1 rounded-full text-blue-600 hover:bg-blue-50 transition-colors"
+                    className="p-1 rounded-full text-orange-500 hover:bg-orange-50 transition-colors"
                     title="Create new project"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -103,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         }}
                         className={`w-full text-left px-3 py-2 rounded-2xl text-xs transition-colors flex items-center justify-between ${
                           currentProject?.id === p.id
-                            ? "bg-blue-50/80 font-semibold text-blue-700 border border-blue-100"
+                            ? "bg-orange-50/80 font-semibold text-orange-600 border border-orange-100"
                             : "hover:bg-slate-50 text-slate-700"
                         }`}
                       >
@@ -121,7 +121,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setDropdownOpen(false);
                       onNewProject();
                     }}
-                    className="w-full flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50/80 rounded-2xl transition-colors"
+                    className="w-full flex items-center justify-center space-x-1.5 py-2 text-xs font-semibold text-orange-600 hover:bg-orange-50/80 rounded-2xl transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>New Project</span>
@@ -134,7 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* New Project Capsule Button */}
           <button
             onClick={onNewProject}
-            className="hidden md:flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 rounded-full shadow-md shadow-blue-500/25 hover:scale-[1.02] transition-all cursor-pointer"
+            className="hidden md:flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-400 hover:to-amber-500 rounded-full shadow-md shadow-orange-500/25 hover:scale-[1.02] transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Project</span>
@@ -145,23 +145,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="relative">
             <button
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-              className="liquid-glass-pill flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:text-blue-600 group transition-all cursor-pointer"
+              className="liquid-glass-pill flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold text-slate-800 hover:text-orange-500 group transition-all cursor-pointer"
               title="Account Settings & Session"
             >
-              <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-600 to-violet-600 text-white flex items-center justify-center text-[10px] font-bold shadow-2xs group-hover:scale-110 transition-transform">
+              <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center text-[10px] font-bold shadow-2xs group-hover:scale-110 transition-transform">
                 {user ? user.name.charAt(0).toUpperCase() : <User className="w-3 h-3" />}
               </div>
               <span className="hidden sm:inline font-medium text-slate-700">
                 {user ? user.name.split(" ")[0] : "Account"}
               </span>
-              <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition-colors" />
+              <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-orange-500 transition-colors" />
             </button>
 
             {userDropdownOpen && (
               <div className="absolute right-0 mt-2 w-64 rounded-3xl bg-white/95 backdrop-blur-2xl border border-white/95 shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95">
                 <div className="px-2 py-2 border-b border-slate-100">
                   <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-violet-600 text-white flex items-center justify-center text-xs font-bold shadow-xs shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-orange-500 to-amber-500 text-white flex items-center justify-center text-xs font-bold shadow-xs shrink-0">
                       {user ? user.name.charAt(0).toUpperCase() : "U"}
                     </div>
                     <div className="overflow-hidden">
@@ -174,8 +174,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                   </div>
                   <div className="mt-2.5 flex items-center space-x-1.5">
-                    <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-100 flex items-center space-x-1">
-                      <ShieldCheck className="w-3 h-3 text-blue-600" />
+                    <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-[10px] font-semibold border border-orange-100 flex items-center space-x-1">
+                      <ShieldCheck className="w-3 h-3 text-orange-500" />
                       <span>{user?.role || "QA Lead"}</span>
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold border border-emerald-100">
