@@ -359,9 +359,6 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
               <h3 className="font-bold text-slate-900 text-sm">
                 5-Sheet Excel (.xlsx) Workbook
               </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Complete enterprise workbook: <strong>Test Cases</strong>, <strong>Requirements</strong>, <strong>Permission Rules</strong>, <strong>Clarifications</strong>, and <strong>Coverage Summary</strong> with auto-filter and formula-injection security.
-              </p>
             </div>
             <div className="space-y-2">
               <button
@@ -391,9 +388,6 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
               <h3 className="font-bold text-slate-900 text-sm">
                 Traceable Test Cases CSV
               </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Lightweight comma-separated format with added traceability fields: ID, Scenario, Type, Role, Priority, Linked Rules, Preconditions, Steps, Expected Result.
-              </p>
             </div>
             <div className="space-y-2">
               <button
@@ -423,9 +417,6 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
               <h3 className="font-bold text-slate-900 text-sm">
                 Multi-Table CSV Bundle (.zip)
               </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Companion CSV archive containing separate relational tables: <strong>test_cases.csv</strong>, <strong>requirements.csv</strong>, <strong>clarifications.csv</strong>, and <strong>permission_rules.csv</strong>.
-              </p>
             </div>
             <div className="space-y-2">
               <button
@@ -455,9 +446,6 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
               <h3 className="font-bold text-slate-900 text-sm">
                 Jira / TestRail Import CSV
               </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Pre-formatted for bulk issue creation with columns: Summary, Description, Preconditions, Steps, Expected Result, Priority, and categorized Labels.
-              </p>
             </div>
             <div className="space-y-2">
               <button
@@ -487,9 +475,6 @@ export const Stage5Export: React.FC<Stage5ExportProps> = ({
               <h3 className="font-bold text-slate-900 text-sm">
                 Full Structured Suite (Versioned JSON)
               </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Documented versioned schema payload (v2.0.0) with complete structured arrays: test_cases, requirements, clarification_decisions, permission_rules, and coverage_summary for automated regression pipelines.
-              </p>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-2">
               <button
