@@ -1,8 +1,11 @@
 import io
+import logging
 from docx import Document
 from typing import Tuple, List, Dict, Any
 
 W_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+logger = logging.getLogger(__name__)
+
 
 
 def _extract_leaf_text(element) -> str:
